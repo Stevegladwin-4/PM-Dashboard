@@ -1,10 +1,15 @@
-export type PMStatus = "Done" | "Overdue" | "Pending" | "Scheduled";
+export type PMStatus =
+  | "Done"
+  | "Overdue"
+  | "Pending"
+  | "Scheduled"
+  | "N/A";
 
 export type PMSchedule = {
   id: string;
   equipment_id: string;
   pm_no: number;
-  scheduled_date: string;
+  scheduled_date: string | null;
   completed_date: string | null;
   completed_by: string | null;
 };

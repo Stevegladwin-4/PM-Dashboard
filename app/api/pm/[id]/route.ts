@@ -15,7 +15,7 @@ export async function PATCH(
   const updateData: {
     completed_date?: string | null;
     completed_by?: string | null;
-    scheduled_date?: string;
+    scheduled_date?: string | null;
   } = {};
 
   if ("completed" in body) {

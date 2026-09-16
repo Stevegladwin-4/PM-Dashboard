@@ -1,26 +1,26 @@
-import type { PMStatus, PMSchedule } from "./types";
+import type { PMSchedule, PMStatus } from "./types";
 
-export function statusOf(pm: PMSchedule, asOf = new Date()): PMStatus {
-  if (pm.completed_date) return "Done";
+export function getPMStatus(pm: PMSchedule): PMStatus {
+  if (!pm.scheduled_date) {
+    return "N/A";
+  }
 
-  const today = new Date(asOf);
+  if (pm.completed_date) {
+    return "Done";
+  }
+
+  const today = new Date();
   today.setHours(0, 0, 0, 0);
 
-  const due = new Date(`${pm.scheduled_date}T00:00:00`);
-  if (due < today) return "Overdue";
+  const scheduled = new Date(`${pm.scheduled_date}T00:00:00`);
 
-  const soon = new Date(today);
-  soon.setDate(soon.getDate() + 7);
+  const diffDays = Math.ceil(
+    (scheduled.getTime() - today.getTime()) /
+      (1000 * 60 * 60 * 24)
+  );
 
-  if (due <= soon) return "Pending";
+  if (diffDays < 0) return "Overdue";
+  if (diffDays <= 7) return "Pending";
+
   return "Scheduled";
-}
-
-export function fmtDate(value: string | Date) {
-  const date = typeof value === "string" ? new Date(`${value}T00:00:00`) : value;
-  return new Intl.DateTimeFormat("en-GB", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric"
-  }).format(date);
 }

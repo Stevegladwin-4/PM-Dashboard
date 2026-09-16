@@ -24,7 +24,7 @@ import {
 import * as XLSX from "xlsx";
 
 import { createClient } from "@/lib/supabase-browser";
-import { fmtDate, statusOf } from "@/lib/pm";
+import { getPMStatus } from "@/lib/pm";
 import type { Equipment, PMSchedule } from "@/lib/types";
 
 const supabase = createClient();
@@ -34,6 +34,7 @@ const emptyStats = {
   Overdue: 0,
   Pending: 0,
   Scheduled: 0,
+  "N/A": 0,
 };
 
 type EquipmentForm = {
@@ -51,6 +52,10 @@ type EquipmentForm = {
   pm2_date: string;
   pm3_date: string;
   pm4_date: string;
+  pm1_na: boolean;
+  pm2_na: boolean;
+  pm3_na: boolean;
+  pm4_na: boolean;
 };
 
 const emptyEquipmentForm: EquipmentForm = {
@@ -68,7 +73,23 @@ const emptyEquipmentForm: EquipmentForm = {
   pm2_date: "",
   pm3_date: "",
   pm4_date: "",
+  pm1_na: false,
+  pm2_na: false,
+  pm3_na: false,
+  pm4_na: false,
 };
+
+function fmtDate(value: string | Date | null) {
+  if (!value) return "N/A";
+
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  }).format(
+    value instanceof Date ? value : new Date(`${value}T00:00:00`)
+  );
+}
 
 function cleanDate(value: unknown): string {
   if (!value) return "";
@@ -241,7 +262,7 @@ export default function Dashboard() {
     const c = { ...emptyStats };
 
     allPMs.forEach((pm) => {
-      c[statusOf(pm)]++;
+      c[getPMStatus(pm)]++;
     });
 
     return c;
@@ -274,7 +295,7 @@ export default function Dashboard() {
       if (
         status !== "Any status" &&
         !(e.pm_schedules ?? []).some(
-          (pm) => statusOf(pm) === status
+          (pm) => getPMStatus(pm) === status
         )
       ) {
         return false;
@@ -347,6 +368,9 @@ export default function Dashboard() {
       const getPMDate = (number: number) =>
         e.pm_schedules?.find((pm) => pm.pm_no === number)
           ?.scheduled_date ?? "";
+      const getPMNA = (number: number) =>
+        e.pm_schedules?.find((pm) => pm.pm_no === number)
+          ?.scheduled_date === null;
 
       setEquipmentForm({
         sno: String(e.sno ?? ""),
@@ -363,6 +387,10 @@ export default function Dashboard() {
         pm2_date: getPMDate(2),
         pm3_date: getPMDate(3),
         pm4_date: getPMDate(4),
+        pm1_na: getPMNA(1),
+        pm2_na: getPMNA(2),
+        pm3_na: getPMNA(3),
+        pm4_na: getPMNA(4),
       });
     } else {
       setEquipmentForm(emptyEquipmentForm);
@@ -405,19 +433,19 @@ export default function Dashboard() {
               ...equipmentForm,
               id: editingEquipment.id,
               pm_dates: {
-                1: equipmentForm.pm1_date,
-                2: equipmentForm.pm2_date,
-                3: equipmentForm.pm3_date,
-                4: equipmentForm.pm4_date,
+                1: equipmentForm.pm1_na ? null : equipmentForm.pm1_date,
+                2: equipmentForm.pm2_na ? null : equipmentForm.pm2_date,
+                3: equipmentForm.pm3_na ? null : equipmentForm.pm3_date,
+                4: equipmentForm.pm4_na ? null : equipmentForm.pm4_date,
               },
             }
           : {
               ...equipmentForm,
               pm_dates: {
-                1: equipmentForm.pm1_date,
-                2: equipmentForm.pm2_date,
-                3: equipmentForm.pm3_date,
-                4: equipmentForm.pm4_date,
+                1: equipmentForm.pm1_na ? null : equipmentForm.pm1_date,
+                2: equipmentForm.pm2_na ? null : equipmentForm.pm2_date,
+                3: equipmentForm.pm3_na ? null : equipmentForm.pm3_date,
+                4: equipmentForm.pm4_na ? null : equipmentForm.pm4_date,
               },
             }
       ),
@@ -464,7 +492,7 @@ export default function Dashboard() {
 
   function openPMDateEditor(pm: PMSchedule) {
     setEditingPM(pm);
-    setPmDate(pm.scheduled_date);
+    setPmDate(pm.scheduled_date ?? "");
   }
 
   async function savePMDate() {
@@ -520,19 +548,19 @@ export default function Dashboard() {
         Contract: e.contract ?? "",
 
         "PM 1 Date": pm1?.scheduled_date ?? "",
-        "PM 1 Status": pm1 ? statusOf(pm1) : "",
+        "PM 1 Status": pm1 ? getPMStatus(pm1) : "",
         "PM 1 Completed": pm1?.completed_date ?? "",
 
         "PM 2 Date": pm2?.scheduled_date ?? "",
-        "PM 2 Status": pm2 ? statusOf(pm2) : "",
+        "PM 2 Status": pm2 ? getPMStatus(pm2) : "",
         "PM 2 Completed": pm2?.completed_date ?? "",
 
         "PM 3 Date": pm3?.scheduled_date ?? "",
-        "PM 3 Status": pm3 ? statusOf(pm3) : "",
+        "PM 3 Status": pm3 ? getPMStatus(pm3) : "",
         "PM 3 Completed": pm3?.completed_date ?? "",
 
         "PM 4 Date": pm4?.scheduled_date ?? "",
-        "PM 4 Status": pm4 ? statusOf(pm4) : "",
+        "PM 4 Status": pm4 ? getPMStatus(pm4) : "",
         "PM 4 Completed": pm4?.completed_date ?? "",
       });
     });
@@ -831,8 +859,8 @@ export default function Dashboard() {
             e.campus ?? "",
             e.contract ?? "",
             String(pm.pm_no),
-            pm.scheduled_date,
-            statusOf(pm),
+            pm.scheduled_date ?? "N/A",
+            getPMStatus(pm),
             pm.completed_date ?? "",
           ])
         )
@@ -1461,58 +1489,130 @@ export default function Dashboard() {
 
               <label>
                 PM 1 Date
-                <input
-                  type="date"
-                  value={equipmentForm.pm1_date}
-                  onChange={(e) =>
-                    updateEquipmentField(
-                      "pm1_date",
-                      e.target.value
-                    )
-                  }
-                />
+                <div className="flex items-center gap-2">
+                  <input
+                    type="date"
+                    value={equipmentForm.pm1_date}
+                    disabled={equipmentForm.pm1_na}
+                    onChange={(e) =>
+                      setEquipmentForm({
+                        ...equipmentForm,
+                        pm1_date: e.target.value,
+                        pm1_na: false,
+                      })
+                    }
+                  />
+                  <label className="flex items-center gap-1">
+                    <input
+                      type="checkbox"
+                      checked={equipmentForm.pm1_na}
+                      onChange={(e) =>
+                        setEquipmentForm({
+                          ...equipmentForm,
+                          pm1_na: e.target.checked,
+                          pm1_date: e.target.checked ? "" : equipmentForm.pm1_date,
+                        })
+                      }
+                    />
+                    N/A
+                  </label>
+                </div>
               </label>
 
               <label>
                 PM 2 Date
-                <input
-                  type="date"
-                  value={equipmentForm.pm2_date}
-                  onChange={(e) =>
-                    updateEquipmentField(
-                      "pm2_date",
-                      e.target.value
-                    )
-                  }
-                />
+                <div className="flex items-center gap-2">
+                  <input
+                    type="date"
+                    value={equipmentForm.pm2_date}
+                    disabled={equipmentForm.pm2_na}
+                    onChange={(e) =>
+                      setEquipmentForm({
+                        ...equipmentForm,
+                        pm2_date: e.target.value,
+                        pm2_na: false,
+                      })
+                    }
+                  />
+                  <label className="flex items-center gap-1">
+                    <input
+                      type="checkbox"
+                      checked={equipmentForm.pm2_na}
+                      onChange={(e) =>
+                        setEquipmentForm({
+                          ...equipmentForm,
+                          pm2_na: e.target.checked,
+                          pm2_date: e.target.checked ? "" : equipmentForm.pm2_date,
+                        })
+                      }
+                    />
+                    N/A
+                  </label>
+                </div>
               </label>
 
               <label>
                 PM 3 Date
-                <input
-                  type="date"
-                  value={equipmentForm.pm3_date}
-                  onChange={(e) =>
-                    updateEquipmentField(
-                      "pm3_date",
-                      e.target.value
-                    )
-                  }
-                />
+                <div className="flex items-center gap-2">
+                  <input
+                    type="date"
+                    value={equipmentForm.pm3_date}
+                    disabled={equipmentForm.pm3_na}
+                    onChange={(e) =>
+                      setEquipmentForm({
+                        ...equipmentForm,
+                        pm3_date: e.target.value,
+                        pm3_na: false,
+                      })
+                    }
+                  />
+                  <label className="flex items-center gap-1">
+                    <input
+                      type="checkbox"
+                      checked={equipmentForm.pm3_na}
+                      onChange={(e) =>
+                        setEquipmentForm({
+                          ...equipmentForm,
+                          pm3_na: e.target.checked,
+                          pm3_date: e.target.checked ? "" : equipmentForm.pm3_date,
+                        })
+                      }
+                    />
+                    N/A
+                  </label>
+                </div>
               </label>
 
               <label>
                 PM 4 Date
-                <input
-                  type="date"
-                  value={equipmentForm.pm4_date}
-                  onChange={(e) =>
-                    updateEquipmentField(
-                      "pm4_date",
-                      e.target.value
-                    )
-                  }
-                />
+                <div className="flex items-center gap-2">
+                  <input
+                    type="date"
+                    value={equipmentForm.pm4_date}
+                    disabled={equipmentForm.pm4_na}
+                    onChange={(e) =>
+                      setEquipmentForm({
+                        ...equipmentForm,
+                        pm4_date: e.target.value,
+                        pm4_na: false,
+                      })
+                    }
+                  />
+                  <label className="flex items-center gap-1">
+                    <input
+                      type="checkbox"
+                      checked={equipmentForm.pm4_na}
+                      onChange={(e) =>
+                        setEquipmentForm({
+                          ...equipmentForm,
+                          pm4_na: e.target.checked,
+                          pm4_date: e.target.checked ? "" : equipmentForm.pm4_date,
+                        })
+                      }
+                    />
+                    N/A
+                  </label>
+                </div>
               </label>
             </div>
 
@@ -1878,12 +1978,12 @@ function PMCell({
     return <span>—</span>;
   }
 
-  const s = statusOf(pm);
+  const s = getPMStatus(pm);
 
   return (
     <div className="pmcell">
       <div className="pmdate">
-        {fmtDate(pm.scheduled_date)}
+        {pm.scheduled_date || "N/A"}
       </div>
 
       <span

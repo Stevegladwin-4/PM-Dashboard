@@ -13,17 +13,11 @@ type EquipmentInput = {
   make?: string;
   campus?: string;
   contract?: string;
-  pm_dates?: Record<string, string>;
+  pm_dates?: Record<string, string | null>;
 };
 
 function clean(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
-}
-
-function defaultPMDate(offsetDays: number) {
-  const date = new Date();
-  date.setUTCDate(date.getUTCDate() + offsetDays);
-  return date.toISOString().slice(0, 10);
 }
 
 function validDate(value: unknown) {
@@ -250,20 +244,8 @@ export async function POST(request: Request) {
      */
     const pmDates = body.pm_dates ?? {};
 
-    const defaultDates: Record<
-      number,
-      string
-    > = {
-      1: defaultPMDate(-25),
-      2: defaultPMDate(-2),
-      3: defaultPMDate(3),
-      4: defaultPMDate(22),
-    };
-
     for (const pmNo of [1, 2, 3, 4]) {
-      const suppliedDate = validDate(
-        pmDates[String(pmNo)]
-      );
+      const suppliedDate = validDate(pmDates[String(pmNo)]) || null;
 
       const { data: existingPM, error: pmFindError } =
         await supabase
@@ -284,21 +266,19 @@ export async function POST(request: Request) {
        * UPDATE EXISTING PM
        */
       if (existingPM) {
-        if (suppliedDate) {
-          const { error: pmUpdateError } =
-            await supabase
-              .from("pm_schedules")
-              .update({
-                scheduled_date: suppliedDate,
-              })
-              .eq("id", existingPM.id);
+        const { error: pmUpdateError } =
+          await supabase
+            .from("pm_schedules")
+            .update({
+              scheduled_date: suppliedDate,
+            })
+            .eq("id", existingPM.id);
 
-          if (pmUpdateError) {
-            return NextResponse.json(
-              { error: pmUpdateError.message },
-              { status: 400 }
-            );
-          }
+        if (pmUpdateError) {
+          return NextResponse.json(
+            { error: pmUpdateError.message },
+            { status: 400 }
+          );
         }
       }
 
@@ -306,17 +286,13 @@ export async function POST(request: Request) {
        * INSERT MISSING PM
        */
       else {
-        const scheduledDate =
-          suppliedDate ||
-          defaultDates[pmNo];
-
         const { error: pmInsertError } =
           await supabase
             .from("pm_schedules")
             .insert({
               equipment_id: equipmentId,
               pm_no: pmNo,
-              scheduled_date: scheduledDate,
+              scheduled_date: suppliedDate,
             });
 
         if (pmInsertError) {
@@ -429,11 +405,7 @@ export async function PATCH(request: Request) {
      */
     if (body.pm_dates) {
       for (const pmNo of [1, 2, 3, 4]) {
-        const date = validDate(
-          body.pm_dates[String(pmNo)]
-        );
-
-        if (!date) continue;
+        const date = validDate(body.pm_dates[String(pmNo)]) || null;
 
         const { data: existingPM } =
           await supabase
