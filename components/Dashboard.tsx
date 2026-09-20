@@ -1,27 +1,53 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import type { FormEvent } from "react";
+import { useRouter } from "next/navigation";
 import {
   AlertTriangle,
+  BarChart3,
+  Building2,
   CalendarDays,
+  CalendarClock,
   CheckCircle2,
+  ChevronRight,
+  ClipboardCheck,
   Clock3,
   Database,
   Download,
   FileSpreadsheet,
   LogIn,
+  ListTodo,
+  MinusCircle,
+  MonitorCog,
   Pencil,
+  PieChart,
   Plus,
   RefreshCw,
   RotateCcw,
   Save,
   Search,
+  ShieldCheck,
   Trash2,
+  TrendingUp,
   Upload,
   Wrench,
   X,
 } from "lucide-react";
 import * as XLSX from "xlsx";
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Legend,
+  Pie,
+  PieChart as RechartsPieChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 
 import { createClient } from "@/lib/supabase-browser";
 import { getPMStatus } from "@/lib/pm";
@@ -140,6 +166,7 @@ function excelValue(row: Record<string, unknown>, names: string[]) {
 }
 
 export default function Dashboard() {
+  const router = useRouter();
   const [equipment, setEquipment] = useState<Equipment[]>([]);
   const [search, setSearch] = useState("");
   const [campus, setCampus] = useState("All");
@@ -147,19 +174,28 @@ export default function Dashboard() {
   const [contract, setContract] = useState("All");
   const [status, setStatus] = useState("Any status");
   const [pmNumber, setPmNumber] = useState("All");
+  const [scheduleSearch, setScheduleSearch] = useState("");
 
-  const [loading, setLoading] = useState(true);
+  const [dataLoading, setDataLoading] = useState(true);
   const [connected, setConnected] = useState(true);
 
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [userRole, setUserRole] = useState<string | null>(null);
 
   const [authOpen, setAuthOpen] = useState(false);
+  const [loginType, setLoginType] = useState<"loginId" | "email">(
+    "loginId"
+  );
+  const [loginId, setLoginId] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [authMessage, setAuthMessage] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
   const [showEquipmentForm, setShowEquipmentForm] = useState(false);
+  const [showDueSoon, setShowDueSoon] = useState(false);
+  const [showOverdue, setShowOverdue] = useState(false);
   const [editingEquipment, setEditingEquipment] =
     useState<Equipment | null>(null);
 
@@ -191,7 +227,7 @@ export default function Dashboard() {
   }
 
   async function load() {
-    setLoading(true);
+    setDataLoading(true);
 
     const {
       data: { user },
@@ -202,7 +238,7 @@ export default function Dashboard() {
     if (!user) {
       setEquipment([]);
       setConnected(true);
-      setLoading(false);
+      setDataLoading(false);
       return;
     }
 
@@ -220,7 +256,7 @@ export default function Dashboard() {
       setEquipment((data ?? []) as Equipment[]);
     }
 
-    setLoading(false);
+    setDataLoading(false);
   }
 
   useEffect(() => {
@@ -363,23 +399,70 @@ export default function Dashboard() {
     });
   }, [equipment, search, campus, department, contract, status, pmNumber]);
 
+  const scheduleFiltered = useMemo(() => {
+    const q = scheduleSearch.toLowerCase().trim();
+
+    if (!q) {
+      return filtered;
+    }
+
+    return filtered.filter((e) => {
+      const searchableText = [
+        e.sno,
+        e.department,
+        e.inventory_no,
+        e.location,
+        e.equipment_name,
+        e.model,
+        e.serial_no,
+        e.make,
+        e.campus,
+        e.contract,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+
+      return searchableText.includes(q);
+    });
+  }, [filtered, scheduleSearch]);
+
   const filteredPMs = useMemo(
     () =>
       filtered
         .flatMap((e) => e.pm_schedules ?? [])
-        .filter((pm) => pm.scheduled_date !== null),
-    [filtered]
+        .filter(
+          (pm) =>
+            pm.scheduled_date !== null &&
+            (pmNumber === "All" || pm.pm_no === Number(pmNumber))
+        ),
+    [filtered, pmNumber]
+  );
+
+  const filteredAllPMs = useMemo(
+    () =>
+      filtered
+        .flatMap((e) => e.pm_schedules ?? [])
+        .filter(
+          (pm) =>
+            pmNumber === "All" || pm.pm_no === Number(pmNumber)
+        ),
+    [filtered, pmNumber]
   );
 
   const filteredCounts = useMemo(() => {
     const c = { ...emptyStats };
 
-    filteredPMs.forEach((pm) => {
+    filteredAllPMs.forEach((pm) => {
       c[getPMStatus(pm)]++;
     });
 
-    return c;
-  }, [filteredPMs]);
+    return {
+      ...c,
+      total: c.Done + c.Overdue + c.Pending + c.Scheduled,
+      NA: c["N/A"],
+    };
+  }, [filteredAllPMs]);
 
   const filteredCampuses = [
     ...new Set(
@@ -396,6 +479,148 @@ export default function Dashboard() {
         (filteredCounts.Done / filteredPMs.length) * 100
       )
     : 0;
+  const compliancePercentage = compliance;
+
+  const dueSoonRows = filtered
+    .flatMap((equipment) =>
+      (equipment.pm_schedules ?? []).map((pm) => ({
+        equipment,
+        pm,
+      }))
+    )
+    .filter(
+      ({ pm }) =>
+        pm.scheduled_date !== null &&
+        getPMStatus(pm) === "Pending"
+    )
+    .sort(
+      (a, b) =>
+        new Date(`${a.pm.scheduled_date}T00:00:00`).getTime() -
+        new Date(`${b.pm.scheduled_date}T00:00:00`).getTime()
+    );
+
+  const overdueRows = filtered
+    .flatMap((equipment) =>
+      (equipment.pm_schedules ?? []).map((pm) => ({
+        equipment,
+        pm,
+      }))
+    )
+    .filter(
+      ({ pm }) =>
+        pm.scheduled_date !== null &&
+        getPMStatus(pm) === "Overdue"
+    )
+    .sort(
+      (a, b) =>
+        new Date(`${a.pm.scheduled_date}T00:00:00`).getTime() -
+        new Date(`${b.pm.scheduled_date}T00:00:00`).getTime()
+    );
+
+  const campusPerformance = filteredCampuses.map((campusName) => {
+    const campusPMs = filtered
+      .filter((e) => e.campus === campusName)
+      .flatMap((e) => e.pm_schedules ?? [])
+      .filter((pm) => pm.scheduled_date !== null);
+    const done = campusPMs.filter(
+      (pm) => getPMStatus(pm) === "Done"
+    ).length;
+
+    return {
+      name: campusName,
+      total: campusPMs.length,
+      percentage: campusPMs.length
+        ? Math.round((done / campusPMs.length) * 100)
+        : 0,
+    };
+  });
+
+  const departmentPerformance = [
+    ...new Set(filtered.map((e) => e.department).filter(Boolean)),
+  ].map((departmentName) => {
+    const departmentPMs = filtered
+      .filter((e) => e.department === departmentName)
+      .flatMap((e) => e.pm_schedules ?? [])
+      .filter((pm) => pm.scheduled_date !== null);
+
+    return {
+      name: departmentName,
+      total: departmentPMs.length,
+      done: departmentPMs.filter(
+        (pm) => getPMStatus(pm) === "Done"
+      ).length,
+    };
+  });
+
+  const pmDistribution = [1, 2, 3, 4].map((pmNo) => ({
+    name: `PM ${pmNo}`,
+    total: filteredPMs.filter((pm) => pm.pm_no === pmNo).length,
+    done: filteredPMs.filter(
+      (pm) => pm.pm_no === pmNo && getPMStatus(pm) === "Done"
+    ).length,
+  }));
+
+  const monthlyTrend = Array.from({ length: 6 }, (_, index) => {
+    const date = new Date();
+    date.setDate(1);
+    date.setMonth(date.getMonth() - (5 - index));
+    const month = date.toISOString().slice(0, 7);
+    const value = filteredPMs.filter(
+      (pm) =>
+        getPMStatus(pm) === "Done" &&
+        pm.completed_date?.startsWith(month)
+    ).length;
+
+    return {
+      name: date.toLocaleDateString("en-US", { month: "short" }),
+      value,
+      percentage: value
+        ? Math.round((value / Math.max(1, filteredCounts.Done)) * 100)
+        : 0,
+    };
+  });
+
+  const pmStatusData = [
+    { name: "Done", value: filteredCounts.Done },
+    { name: "Due Soon", value: filteredCounts.Pending },
+    { name: "Overdue", value: filteredCounts.Overdue },
+    { name: "Scheduled", value: filteredCounts.Scheduled },
+  ];
+
+  const campusPMData = filteredCampuses.map((campusName) => {
+    const pms = filtered
+      .filter((e) => e.campus === campusName)
+      .flatMap((e) => e.pm_schedules ?? [])
+      .filter((pm) => pm.scheduled_date !== null);
+
+    return {
+      campus: campusName,
+      Done: pms.filter((pm) => getPMStatus(pm) === "Done").length,
+      "Due Soon": pms.filter((pm) => getPMStatus(pm) === "Pending").length,
+      Overdue: pms.filter((pm) => getPMStatus(pm) === "Overdue").length,
+      Scheduled: pms.filter((pm) => getPMStatus(pm) === "Scheduled").length,
+    };
+  });
+
+  const departmentPMData = departmentPerformance.map((item) => {
+    const pms = filtered
+      .filter((e) => e.department === item.name)
+      .flatMap((e) => e.pm_schedules ?? [])
+      .filter((pm) => pm.scheduled_date !== null);
+
+    return {
+      department: item.name,
+      Done: pms.filter((pm) => getPMStatus(pm) === "Done").length,
+      "Due Soon": pms.filter((pm) => getPMStatus(pm) === "Pending").length,
+      Overdue: pms.filter((pm) => getPMStatus(pm) === "Overdue").length,
+      Scheduled: pms.filter((pm) => getPMStatus(pm) === "Scheduled").length,
+    };
+  });
+
+  const campusComplianceData = campusPerformance.map((item) => ({
+    campus: item.name,
+    compliance: item.percentage,
+  }));
 
   const campuses = [
     ...new Set(
@@ -976,22 +1201,76 @@ export default function Dashboard() {
     URL.revokeObjectURL(a.href);
   }
 
-  async function signIn() {
-    setAuthMessage("");
+  async function handleLogin(e: FormEvent) {
+    e.preventDefault();
 
-    const { error } =
-      await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
+    setError("");
+    setLoading(true);
 
-    if (error) {
-      setAuthMessage(error.message);
-    } else {
-      setAuthOpen(false);
-      await load();
-      await loadUserRole();
+    try {
+      let authEmail = "";
+
+      if (loginType === "email") {
+        if (!email.trim()) {
+          setError("Please enter your email.");
+          setLoading(false);
+          return;
+        }
+
+        authEmail = email.trim();
+      } else {
+        if (!loginId.trim()) {
+          setError("Please enter your Login ID.");
+          setLoading(false);
+          return;
+        }
+
+        const response = await fetch("/api/auth/login-id", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            loginId: loginId.trim(),
+          }),
+        });
+
+        const result = await response.json();
+
+        if (!response.ok) {
+          setError(result.error || "Login ID not found.");
+          setLoading(false);
+          return;
+        }
+
+        authEmail = result.email;
+      }
+
+      if (!password) {
+        setError("Please enter your password.");
+        setLoading(false);
+        return;
+      }
+
+      const { error: signInError } =
+        await supabase.auth.signInWithPassword({
+          email: authEmail,
+          password,
+        });
+
+      if (signInError) {
+        setError("Invalid credentials.");
+        setLoading(false);
+        return;
+      }
+
+      router.replace("/");
+      router.refresh();
+    } catch {
+      setError("Unable to sign in. Please try again.");
     }
+
+    setLoading(false);
   }
 
   async function signUp() {
@@ -1037,8 +1316,8 @@ export default function Dashboard() {
   }
 
   return (
-    <main className="page">
-      <header className="topbar">
+    <main className="page dashboard">
+      <header className="topbar dashboard-header">
         <div className="brand">
           <div className="logo">
             <Wrench size={23} />
@@ -1124,53 +1403,255 @@ export default function Dashboard() {
         </div>
       </header>
 
-      <div
-        className={
-          connected
-            ? "banner ok"
-            : "banner"
-        }
-      >
-        <span>●</span>{" "}
-        {connected
-          ? "Live Supabase PostgreSQL + Realtime"
-          : "Database is unavailable. Check .env.local and run supabase/schema.sql."}
-      </div>
+      <div className="dashboard-content">
+      <section className="filter-bar dashboard-filter-bar">
+        <div className="searchbox">
+          <Search size={17} />
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search equipment, inventory, model..."
+          />
+        </div>
 
-      <section className="stats">
-        <Stat
-          label="Total Equipment"
-          value={equipment.length}
-          hint={`${allPMs.length} active PMs`}
-          icon={<Database />}
-        />
-
-        <Stat
-          label="PM Overdue"
-          value={filteredCounts.Overdue}
-          hint="Past scheduled date"
-          danger
-          icon={<AlertTriangle />}
-        />
-
-        <Stat
-          label="PM Due Soon"
-          value={filteredCounts.Pending}
-          hint="Within next 30 days"
-          warning
-          icon={<Clock3 />}
-        />
-
-        <Stat
-          label="Compliance Rate"
-          value={`${compliance}%`}
-          hint={`${filteredCounts.Done} done / ${filteredPMs.length} scheduled`}
-          success
-          icon={<CheckCircle2 />}
-        />
+        <Select value={campus} setValue={setCampus} options={campuses} label="Campus" />
+        <Select value={department} setValue={setDepartment} options={departments} label="Department" />
+        <Select value={contract} setValue={setContract} options={contracts} label="Contract" />
+        <Select value={pmNumber} setValue={setPmNumber} options={["1", "2", "3", "4"]} label="PM" any="All PMs" />
+        <Select value={status} setValue={setStatus} options={["Done", "Overdue", "Pending", "Scheduled"]} label="Status" any="Any status" />
       </section>
 
-      <section className="panel filters">
+      <section className="kpi-grid">
+        <Stat label="TOTAL EQUIPMENT" value={filtered.length} hint="Equipment assets" icon={<MonitorCog />} />
+        <Stat label="ACTIVE PMs" value={filteredCounts.total} hint="N/A excluded" icon={<ClipboardCheck />} />
+        <Stat label="PM DONE" value={filteredCounts.Done} hint="Completed PMs" icon={<CheckCircle2 />} />
+        <Stat label="PM YET TO BE DONE" value={filteredCounts.Pending + filteredCounts.Overdue} hint={`${filteredCounts.Pending} due soon · ${filteredCounts.Overdue} overdue`} icon={<ListTodo />} />
+        <div className="clickable-stat" onClick={() => setShowDueSoon(true)}>
+          <Stat label="PM DUE SOON" value={filteredCounts.Pending} hint="Within next 30 days" warning icon={<Clock3 />} />
+        </div>
+        <div className="clickable-stat" onClick={() => setShowOverdue(true)}>
+          <Stat label="OVERDUE" value={filteredCounts.Overdue} hint="Requires attention" danger icon={<AlertTriangle />} />
+        </div>
+        <Stat label="COMPLIANCE" value={`${compliancePercentage}%`} hint={`${filteredCounts.Done} / ${filteredCounts.total} active PMs`} icon={<ShieldCheck />} />
+        <Stat label="N/A PMs" value={filteredCounts.NA} hint="Excluded from calculations" icon={<MinusCircle />} />
+      </section>
+
+      <section className="analytics-section">
+        <div className="analytics-grid-four">
+          <div className="dashboard-card chart-card">
+            <ChartHeading title="PM Status Distribution" subtitle="N/A excluded from calculation" icon={<PieChart size={21} />} />
+            <div className="chart-box pie-box">
+              <ResponsiveContainer width="100%" height={270}>
+                <RechartsPieChart>
+                  <Pie data={pmStatusData} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={65} outerRadius={100} paddingAngle={3}>
+                    {pmStatusData.map((entry, index) => <Cell key={`pm-status-${index}`} fill={["#16a34a", "#f59e0b", "#dc2626", "#6366f1"][index]} />)}
+                  </Pie>
+                  <Tooltip />
+                  <Legend verticalAlign="bottom" />
+                </RechartsPieChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          <div className="dashboard-card chart-card">
+            <ChartHeading title="PM Status by Campus" subtitle="Active PMs only" icon={<Building2 size={21} />} />
+            <div className="chart-box">
+              <ResponsiveContainer width="100%" height={270}>
+                <BarChart data={campusPMData} margin={{ top: 5, right: 8, left: -8, bottom: 5 }}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="campus" tick={{ fontSize: 11 }} /><YAxis allowDecimals={false} /><Tooltip /><Legend /><Bar dataKey="Done" stackId="pm" name="Done" fill="#16a34a" /><Bar dataKey="Due Soon" stackId="pm" name="Due Soon" fill="#f59e0b" /><Bar dataKey="Overdue" stackId="pm" name="Overdue" fill="#dc2626" /><Bar dataKey="Scheduled" stackId="pm" name="Scheduled" fill="#6366f1" /></BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          <div className="dashboard-card chart-card">
+            <ChartHeading title="Department PM Status" subtitle="Current filtered equipment" icon={<Building2 size={21} />} />
+            <div className="chart-area department-chart">
+              <ResponsiveContainer width="100%" height={270}>
+                <BarChart data={departmentPMData} margin={{ top: 8, right: 5, left: -12, bottom: 5 }}><CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="department" tick={{ fontSize: 8 }} angle={-20} textAnchor="end" height={45} interval={0} /><YAxis allowDecimals={false} tick={{ fontSize: 9 }} /><Tooltip /><Legend verticalAlign="bottom" height={25} /><Bar dataKey="Done" stackId="status" name="Done" fill="#16a34a" radius={[0, 0, 0, 0]} /><Bar dataKey="Due Soon" stackId="status" name="Due Soon" fill="#f59e0b" /><Bar dataKey="Overdue" stackId="status" name="Overdue" fill="#dc2626" /><Bar dataKey="Scheduled" stackId="status" name="Scheduled" fill="#6366f1" radius={[3, 3, 0, 0]} /></BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          <div className="dashboard-card chart-card">
+            <ChartHeading title="Compliance by Campus" subtitle="Done ÷ active PMs" icon={<ShieldCheck size={21} />} />
+            <div className="chart-box">
+              <ResponsiveContainer width="100%" height={270}>
+                <BarChart data={campusComplianceData} margin={{ top: 8, right: 8, left: -8, bottom: 5 }}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="campus" tick={{ fontSize: 11 }} /><YAxis domain={[0, 100]} tickFormatter={(value) => `${value}%`} /><Tooltip formatter={(value) => [`${value}%`, "Compliance"]} /><Bar dataKey="compliance" name="Compliance" fill="#2563eb" /></BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="workload-row">
+        <WorkloadCard className="workload-overdue" icon={<AlertTriangle size={22} />} label="Overdue PMs" value={filteredCounts.Overdue} hint="Requires attention" onClick={() => setShowOverdue(true)} />
+        <WorkloadCard className="workload-pending" icon={<Clock3 size={22} />} label="PM Due Soon" value={filteredCounts.Pending} hint="Within next 30 days" onClick={() => setShowDueSoon(true)} />
+        <WorkloadCard className="workload-yet" icon={<ClipboardCheck size={22} />} label="PM Yet to be Done" value={filteredCounts.Pending + filteredCounts.Overdue} hint="Pending + Overdue" onClick={() => setShowDueSoon(true)} />
+      </section>
+
+      {showDueSoon && <StatusPanel title="PMs Due Soon" subtitle="Preventive maintenance due within 30 days" rows={dueSoonRows} status="Pending" onClose={() => setShowDueSoon(false)} updatePM={updatePM} />}
+      {showOverdue && <StatusPanel title="Overdue PMs" subtitle="Preventive maintenance requiring attention" rows={overdueRows} status="Overdue" onClose={() => setShowOverdue(false)} updatePM={updatePM} />}
+
+      <div className="legacy-analytics">
+      <section className="stats stats-grid">
+        <div className="stat stat-card">
+          <h3>Total Equipment</h3>
+          <div className="value">{filtered.length}</div>
+          <div className="hint">Active assets</div>
+        </div>
+
+        <div className="stat stat-card">
+          <h3>PM Done</h3>
+          <div className="value">{filteredCounts.Done}</div>
+          <div className="hint">Completed PMs</div>
+        </div>
+
+        <div
+          className="clickable-stat"
+          onClick={() => setShowDueSoon(true)}
+        >
+          <div className="stat stat-card">
+            <h3>PM Due Soon</h3>
+            <div className="value">{filteredCounts.Pending}</div>
+            <div className="hint">Within next 30 days</div>
+          </div>
+        </div>
+
+        <div className="stat stat-card">
+          <h3>Overdue</h3>
+          <div className="value">{filteredCounts.Overdue}</div>
+          <div className="hint">Requires attention</div>
+        </div>
+
+        <div className="stat stat-card">
+          <h3>Compliance</h3>
+          <div className="value">{compliancePercentage}%</div>
+          <div className="hint">PM completion rate</div>
+        </div>
+      </section>
+
+      {showDueSoon && (
+        <div className="due-soon-panel">
+          <div className="panel-header">
+            <div>
+              <h2>PM Due Soon</h2>
+              <p>PMs due within the next 30 days</p>
+            </div>
+
+            <button
+              className="btn"
+              onClick={() => setShowDueSoon(false)}
+            >
+              Close
+            </button>
+          </div>
+
+          <div className="table-wrap due-soon-table">
+            <table>
+              <thead>
+                <tr>
+                  <th>S.No</th>
+                  <th>Equipment</th>
+                  <th>Inventory No</th>
+                  <th>Department</th>
+                  <th>Campus</th>
+                  <th>PM</th>
+                  <th>Due Date</th>
+                  <th>Days Remaining</th>
+                  <th>Status</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+
+              <tbody>
+                {filtered
+                  .flatMap((equipment) =>
+                    (equipment.pm_schedules ?? []).map((pm) => ({
+                      equipment,
+                      pm,
+                    }))
+                  )
+                  .filter(
+                    ({ pm }) =>
+                      pm.scheduled_date !== null &&
+                      getPMStatus(pm) === "Pending"
+                  )
+                  .sort((a, b) => {
+                    return (
+                      new Date(`${a.pm.scheduled_date}T00:00:00`).getTime() -
+                      new Date(`${b.pm.scheduled_date}T00:00:00`).getTime()
+                    );
+                  })
+                  .map(({ equipment, pm }, index) => {
+                    const today = new Date();
+                    today.setHours(0, 0, 0, 0);
+
+                    const dueDate = new Date(
+                      `${pm.scheduled_date}T00:00:00`
+                    );
+
+                    const daysRemaining = Math.ceil(
+                      (dueDate.getTime() - today.getTime()) /
+                        (1000 * 60 * 60 * 24)
+                    );
+
+                    return (
+                      <tr key={pm.id}>
+                        <td>{index + 1}</td>
+
+                        <td>
+                          <strong>{equipment.equipment_name}</strong>
+
+                          {equipment.model && (
+                            <div className="table-subtext">
+                              {equipment.model}
+                            </div>
+                          )}
+                        </td>
+
+                        <td>{equipment.inventory_no}</td>
+                        <td>{equipment.department}</td>
+                        <td>{equipment.campus ?? "N/A"}</td>
+                        <td>PM {pm.pm_no}</td>
+                        <td>{fmtDate(pm.scheduled_date)}</td>
+
+                        <td>
+                          <span
+                            className={
+                              daysRemaining <= 7
+                                ? "days-urgent"
+                                : "days-normal"
+                            }
+                          >
+                            {daysRemaining === 0
+                              ? "Due today"
+                              : `${daysRemaining} days`}
+                          </span>
+                        </td>
+
+                        <td>
+                          <span className="status pending">
+                            Pending
+                          </span>
+                        </td>
+
+                        <td>
+                          <button
+                            className="btn btn-primary"
+                            onClick={() => updatePM(pm, true)}
+                          >
+                            Mark Done
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      <section className="panel filters filter-bar">
         <div className="searchbox">
           <Search size={17} />
 
@@ -1226,8 +1707,8 @@ export default function Dashboard() {
         />
       </section>
 
-      <section className="charts">
-        <div className="panel chart">
+      <section className="charts dashboard-grid">
+        <div className="panel chart dashboard-card">
           <h2>PM Status by Campus</h2>
           <p>Across all four PM schedules</p>
 
@@ -1290,7 +1771,7 @@ export default function Dashboard() {
           </div>
         </div>
 
-        <div className="panel chart">
+        <div className="panel chart dashboard-card">
           <h2>Overall PM Distribution</h2>
           <p>All scheduled PM dates</p>
 
@@ -1343,14 +1824,24 @@ export default function Dashboard() {
         </div>
       </section>
 
-      <section className="panel">
-        <div className="tablehead">
-          <h2>Equipment PM Schedule</h2>
+      </div>
 
-          <p>
-            {filtered.length} assets · PM 1–4 ·
-            Individual Mark Done / Undo
-          </p>
+      <section className="panel equipment-table equipment-schedule-card">
+        <div className="equipment-schedule-header">
+          <div>
+            <h2>Equipment PM Schedule</h2>
+
+            <p>
+              Complete preventive maintenance schedule for all equipment
+            </p>
+          </div>
+
+          <div className="schedule-mini-stats">
+            <div><strong>{filtered.length}</strong><span>Equipment</span></div>
+            <div><strong>{filteredCounts.total}</strong><span>Active PMs</span></div>
+            <div><strong>{filteredCounts.NA}</strong><span>N/A</span></div>
+            <div><strong>{filteredCounts.Pending + filteredCounts.Overdue}</strong><span>Yet to be Done</span></div>
+          </div>
 
           <small>
             Phone/tablet: swipe horizontally. No
@@ -1389,7 +1880,33 @@ export default function Dashboard() {
           )}
         </div>
 
-        <div className="tablewrap">
+        <div className="schedule-search-bar">
+          <div className="schedule-search-box">
+            <Search size={17} />
+            <input
+              type="text"
+              value={scheduleSearch}
+              onChange={(e) => setScheduleSearch(e.target.value)}
+              placeholder="Search Equipment PM Schedule..."
+            />
+            {scheduleSearch && (
+              <button
+                type="button"
+                className="schedule-search-clear"
+                onClick={() => setScheduleSearch("")}
+                aria-label="Clear schedule search"
+              >
+                <X size={15} />
+              </button>
+            )}
+          </div>
+          <div className="schedule-search-info">
+            Showing <strong>{scheduleFiltered.length}</strong> of{" "}
+            <strong>{filtered.length}</strong> equipment
+          </div>
+        </div>
+
+        <div className="tablewrap table-wrap equipment-schedule-table">
           <table>
             <thead>
               <tr>
@@ -1442,7 +1959,7 @@ export default function Dashboard() {
                   </td>
                 </tr>
               ) : (
-                filtered.map((e) => (
+                scheduleFiltered.map((e) => (
                   <EquipmentRow
                     key={e.id}
                     e={e}
@@ -1465,6 +1982,8 @@ export default function Dashboard() {
           </table>
         </div>
       </section>
+
+      </div>
 
       {showEquipmentForm && (
         <div className="overlay">
@@ -1811,38 +2330,97 @@ export default function Dashboard() {
               <X />
             </button>
 
-            <h2>Supabase Auth</h2>
+            <h2>Sign in</h2>
 
-            <input
-              value={email}
-              onChange={(e) =>
-                setEmail(e.target.value)
-              }
-              placeholder="Email"
-            />
+            <form onSubmit={handleLogin}>
+              <div className="login-methods">
+                <button
+                  type="button"
+                  className={
+                    loginType === "loginId"
+                      ? "login-method active"
+                      : "login-method"
+                  }
+                  onClick={() => {
+                    setLoginType("loginId");
+                    setError("");
+                  }}
+                >
+                  Login ID
+                </button>
 
-            <input
-              value={password}
-              onChange={(e) =>
-                setPassword(e.target.value)
-              }
-              type="password"
-              placeholder="Password"
-            />
+                <button
+                  type="button"
+                  className={
+                    loginType === "email"
+                      ? "login-method active"
+                      : "login-method"
+                  }
+                  onClick={() => {
+                    setLoginType("email");
+                    setError("");
+                  }}
+                >
+                  Email
+                </button>
+              </div>
 
-            <div className="authmsg">
-              {authMessage}
-            </div>
+              {loginType === "loginId" ? (
+                <div className="login-field">
+                  <label htmlFor="loginId">Login ID</label>
+                  <input
+                    id="loginId"
+                    type="text"
+                    value={loginId}
+                    onChange={(e) => setLoginId(e.target.value)}
+                    placeholder="Enter Login ID"
+                    autoComplete="username"
+                    disabled={loading}
+                  />
+                </div>
+              ) : (
+                <div className="login-field">
+                  <label htmlFor="email">Email Address</label>
+                  <input
+                    id="email"
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="Enter email address"
+                    autoComplete="username"
+                    disabled={loading}
+                  />
+                </div>
+              )}
 
-            <div className="actions">
+              <div className="login-field">
+                <label htmlFor="password">Password</label>
+                <input
+                  id="password"
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Enter password"
+                  autoComplete="current-password"
+                  disabled={loading}
+                />
+              </div>
+
+              <div className="authmsg">
+                {error || authMessage}
+              </div>
+
+              <div className="actions">
+                <button
+                  type="submit"
+                  className="btn primary"
+                  disabled={loading}
+                >
+                  {loading ? "Signing in..." : "Sign in"}
+                </button>
+
               <button
-                className="btn primary"
-                onClick={signIn}
-              >
-                Sign in
-              </button>
-
-              <button
+                type="button"
                 className="btn"
                 onClick={signUp}
               >
@@ -1850,12 +2428,14 @@ export default function Dashboard() {
               </button>
 
               <button
+                type="button"
                 className="btn"
                 onClick={resetPassword}
               >
                 Reset password
               </button>
-            </div>
+              </div>
+            </form>
           </div>
         </div>
       )}
@@ -1916,6 +2496,146 @@ function Stat({
 
       <small>{hint}</small>
     </div>
+  );
+}
+
+function ChartHeading({
+  title,
+  subtitle,
+  icon,
+}: {
+  title: string;
+  subtitle: string;
+  icon: React.ReactNode;
+}) {
+  return (
+    <div className="card-heading">
+      <div>
+        <h2>{title}</h2>
+        <p>{subtitle}</p>
+      </div>
+      {icon}
+    </div>
+  );
+}
+
+function PerformanceRow({
+  label,
+  value,
+  percentage,
+}: {
+  label: string;
+  value: number;
+  percentage: number;
+}) {
+  return (
+    <div className="pm-performance-row">
+      <div className="pm-performance-label">{label}</div>
+      <div className="pm-performance-bar">
+        <div
+          className="pm-performance-fill"
+          style={{ width: `${Math.min(100, Math.max(0, percentage))}%` }}
+        />
+      </div>
+      <div className="pm-performance-value">
+        {value}{percentage !== value ? `%` : ""}
+      </div>
+    </div>
+  );
+}
+
+function SummaryItem({
+  className,
+  icon,
+  value,
+  label,
+}: {
+  className: string;
+  icon: React.ReactNode;
+  value: number;
+  label: string;
+}) {
+  return (
+    <div className={`summary-item ${className}`}>
+      {icon}
+      <strong>{value}</strong>
+      <span>{label}</span>
+    </div>
+  );
+}
+
+function WorkloadCard({
+  className,
+  icon,
+  label,
+  value,
+  hint,
+  onClick,
+}: {
+  className: string;
+  icon: React.ReactNode;
+  label: string;
+  value: number;
+  hint: string;
+  onClick?: () => void;
+}) {
+  return (
+    <button type="button" className={`workload-card ${className}`} onClick={onClick}>
+      {icon}
+      <div>
+        <span>{label}</span>
+        <strong>{value}</strong>
+        <small>{hint}</small>
+      </div>
+      <ChevronRight size={20} />
+    </button>
+  );
+}
+
+function StatusPanel({
+  title,
+  subtitle,
+  rows,
+  status,
+  onClose,
+  updatePM,
+}: {
+  title: string;
+  subtitle: string;
+  rows: { equipment: Equipment; pm: PMSchedule }[];
+  status: "Pending" | "Overdue";
+  onClose: () => void;
+  updatePM: (pm: PMSchedule, completed: boolean) => void;
+}) {
+  return (
+    <section className="dashboard-card due-panel">
+      <div className="card-heading">
+        <div>
+          <h2>{title}</h2>
+          <p>{subtitle}</p>
+        </div>
+        <button onClick={onClose} className="icon-button" aria-label="Close">
+          <X size={18} />
+        </button>
+      </div>
+      <div className="table-wrap due-soon-table">
+        <table>
+          <thead><tr><th>Equipment</th><th>Inventory No</th><th>PM</th><th>Due Date</th><th>Status</th><th>Action</th></tr></thead>
+          <tbody>
+            {rows.map(({ equipment, pm }) => (
+              <tr key={pm.id}>
+                <td><strong>{equipment.equipment_name}</strong></td>
+                <td>{equipment.inventory_no}</td>
+                <td>PM {pm.pm_no}</td>
+                <td>{fmtDate(pm.scheduled_date)}</td>
+                <td><span className={`status ${status.toLowerCase()}`}>{status}</span></td>
+                <td>{status === "Pending" && <button className="btn btn-primary" onClick={() => updatePM(pm, true)}>Mark Done</button>}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
   );
 }
 
