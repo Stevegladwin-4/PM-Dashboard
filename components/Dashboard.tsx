@@ -1140,8 +1140,8 @@ export default function Dashboard() {
       <section className="stats">
         <Stat
           label="Total Equipment"
-          value={summaryEquipment.length}
-          hint={`${summaryPMs.length} active PMs`}
+          value={equipment.length}
+          hint={`${allPMs.length} active PMs`}
           icon={<Database />}
         />
 
