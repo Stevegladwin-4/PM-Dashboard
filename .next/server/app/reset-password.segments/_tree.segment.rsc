@@ -1,2 +1,0 @@
-:HL["/_next/static/chunks/28ihlai9pxupd.css","style"]
-0:{"tree":{"name":"","param":null,"prefetchHints":4176,"slots":{"children":{"name":"reset-password","param":null,"prefetchHints":4192,"slots":{"children":{"name":"__PAGE__","param":null,"prefetchHints":4256,"slots":null}}}}},"staleTime":300,"buildId":"XiKFPaHvMNxuP-A9GpB-1"}
