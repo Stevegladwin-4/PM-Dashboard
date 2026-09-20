@@ -79,11 +79,6 @@ var __TURBOPACK__imported__module__$5b$project$5d2f$lib$2f$supabase$2d$server$2e
 function clean(value) {
     return typeof value === "string" ? value.trim() : "";
 }
-function defaultPMDate(offsetDays) {
-    const date = new Date();
-    date.setUTCDate(date.getUTCDate() + offsetDays);
-    return date.toISOString().slice(0, 10);
-}
 function validDate(value) {
     const date = clean(value);
     if (!date) return "";
@@ -236,19 +231,13 @@ async function POST(request) {
      * If no date supplied:
      *     use defaults only when PM doesn't exist.
      */ const pmDates = body.pm_dates ?? {};
-        const defaultDates = {
-            1: defaultPMDate(-25),
-            2: defaultPMDate(-2),
-            3: defaultPMDate(3),
-            4: defaultPMDate(22)
-        };
         for (const pmNo of [
             1,
             2,
             3,
             4
         ]){
-            const suppliedDate = validDate(pmDates[String(pmNo)]);
+            const suppliedDate = validDate(pmDates[String(pmNo)]) || null;
             const { data: existingPM, error: pmFindError } = await supabase.from("pm_schedules").select("id").eq("equipment_id", equipmentId).eq("pm_no", pmNo).maybeSingle();
             if (pmFindError) {
                 return __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$server$2e$js__$5b$app$2d$route$5d$__$28$ecmascript$29$__["NextResponse"].json({
@@ -260,24 +249,21 @@ async function POST(request) {
             /*
        * UPDATE EXISTING PM
        */ if (existingPM) {
-                if (suppliedDate) {
-                    const { error: pmUpdateError } = await supabase.from("pm_schedules").update({
-                        scheduled_date: suppliedDate
-                    }).eq("id", existingPM.id);
-                    if (pmUpdateError) {
-                        return __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$server$2e$js__$5b$app$2d$route$5d$__$28$ecmascript$29$__["NextResponse"].json({
-                            error: pmUpdateError.message
-                        }, {
-                            status: 400
-                        });
-                    }
+                const { error: pmUpdateError } = await supabase.from("pm_schedules").update({
+                    scheduled_date: suppliedDate
+                }).eq("id", existingPM.id);
+                if (pmUpdateError) {
+                    return __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$server$2e$js__$5b$app$2d$route$5d$__$28$ecmascript$29$__["NextResponse"].json({
+                        error: pmUpdateError.message
+                    }, {
+                        status: 400
+                    });
                 }
             } else {
-                const scheduledDate = suppliedDate || defaultDates[pmNo];
                 const { error: pmInsertError } = await supabase.from("pm_schedules").insert({
                     equipment_id: equipmentId,
                     pm_no: pmNo,
-                    scheduled_date: scheduledDate
+                    scheduled_date: suppliedDate
                 });
                 if (pmInsertError) {
                     return __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$server$2e$js__$5b$app$2d$route$5d$__$28$ecmascript$29$__["NextResponse"].json({
@@ -363,8 +349,7 @@ async function PATCH(request) {
                 3,
                 4
             ]){
-                const date = validDate(body.pm_dates[String(pmNo)]);
-                if (!date) continue;
+                const date = validDate(body.pm_dates[String(pmNo)]) || null;
                 const { data: existingPM } = await supabase.from("pm_schedules").select("id").eq("equipment_id", body.id).eq("pm_no", pmNo).maybeSingle();
                 if (existingPM) {
                     const { error: pmError } = await supabase.from("pm_schedules").update({

@@ -146,6 +146,7 @@ export default function Dashboard() {
   const [department, setDepartment] = useState("All");
   const [contract, setContract] = useState("All");
   const [status, setStatus] = useState("Any status");
+  const [pmNumber, setPmNumber] = useState("All");
 
   const [loading, setLoading] = useState(true);
   const [connected, setConnected] = useState(true);
@@ -254,19 +255,62 @@ export default function Dashboard() {
   }, []);
 
   const allPMs = useMemo(
-    () => equipment.flatMap((e) => e.pm_schedules ?? []),
+    () =>
+      equipment
+        .flatMap((e) => e.pm_schedules ?? [])
+        .filter((pm) => pm.scheduled_date !== null),
     [equipment]
+  );
+
+  const summaryEquipment = useMemo(() => {
+    const q = search.toLowerCase().trim();
+
+    return equipment.filter((e) => {
+      const text = [
+        e.sno,
+        e.department,
+        e.inventory_no,
+        e.location,
+        e.equipment_name,
+        e.model,
+        e.serial_no,
+        e.make,
+        e.campus,
+        e.contract,
+      ]
+        .join(" ")
+        .toLowerCase();
+
+      if (q && !text.includes(q)) return false;
+      if (campus !== "All" && e.campus !== campus) return false;
+      if (department !== "All" && e.department !== department) return false;
+      if (contract !== "All" && e.contract !== contract) return false;
+
+      return true;
+    });
+  }, [equipment, search, campus, department, contract]);
+
+  const summaryPMs = useMemo(
+    () =>
+      allPMs.filter(
+        (pm) =>
+          summaryEquipment.some((e) =>
+            (e.pm_schedules ?? []).some((item) => item.id === pm.id)
+          ) &&
+          (pmNumber === "All" || pm.pm_no === Number(pmNumber))
+      ),
+    [allPMs, summaryEquipment, pmNumber]
   );
 
   const counts = useMemo(() => {
     const c = { ...emptyStats };
 
-    allPMs.forEach((pm) => {
+    summaryPMs.forEach((pm) => {
       c[getPMStatus(pm)]++;
     });
 
     return c;
-  }, [allPMs]);
+  }, [summaryPMs]);
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase().trim();
@@ -292,21 +336,65 @@ export default function Dashboard() {
       if (department !== "All" && e.department !== department) return false;
       if (contract !== "All" && e.contract !== contract) return false;
 
-      if (
+      const activePMs = (e.pm_schedules ?? []).filter(
+        (pm) => pm.scheduled_date !== null
+      );
+
+      if (pmNumber !== "All") {
+        const selectedPM = activePMs.find(
+          (pm) => pm.pm_no === Number(pmNumber)
+        );
+
+        if (!selectedPM) return false;
+        if (
+          status !== "Any status" &&
+          getPMStatus(selectedPM) !== status
+        ) {
+          return false;
+        }
+      } else if (
         status !== "Any status" &&
-        !(e.pm_schedules ?? []).some(
-          (pm) => getPMStatus(pm) === status
-        )
+        !activePMs.some((pm) => getPMStatus(pm) === status)
       ) {
         return false;
       }
 
       return true;
     });
-  }, [equipment, search, campus, department, contract, status]);
+  }, [equipment, search, campus, department, contract, status, pmNumber]);
 
-  const compliance = allPMs.length
-    ? Math.round((counts.Done / allPMs.length) * 100)
+  const filteredPMs = useMemo(
+    () =>
+      filtered
+        .flatMap((e) => e.pm_schedules ?? [])
+        .filter((pm) => pm.scheduled_date !== null),
+    [filtered]
+  );
+
+  const filteredCounts = useMemo(() => {
+    const c = { ...emptyStats };
+
+    filteredPMs.forEach((pm) => {
+      c[getPMStatus(pm)]++;
+    });
+
+    return c;
+  }, [filteredPMs]);
+
+  const filteredCampuses = [
+    ...new Set(
+      filtered
+        .map((e) => e.campus)
+        .filter(
+          (value): value is string => Boolean(value)
+        )
+    ),
+  ].sort();
+
+  const compliance = filteredPMs.length
+    ? Math.round(
+        (filteredCounts.Done / filteredPMs.length) * 100
+      )
     : 0;
 
   const campuses = [
@@ -351,7 +439,7 @@ export default function Dashboard() {
 
   async function markAll(e: Equipment) {
     const pending = (e.pm_schedules ?? []).filter(
-      (pm) => !pm.completed_date
+      (pm) => pm.scheduled_date !== null && !pm.completed_date
     );
 
     for (const pm of pending) {
@@ -818,6 +906,7 @@ export default function Dashboard() {
     setDepartment("All");
     setContract("All");
     setStatus("Any status");
+    setPmNumber("All");
   }
 
   /*
@@ -1051,14 +1140,14 @@ export default function Dashboard() {
       <section className="stats">
         <Stat
           label="Total Equipment"
-          value={equipment.length}
-          hint={`${allPMs.length} scheduled PMs`}
+          value={summaryEquipment.length}
+          hint={`${summaryPMs.length} active PMs`}
           icon={<Database />}
         />
 
         <Stat
           label="PM Overdue"
-          value={counts.Overdue}
+          value={filteredCounts.Overdue}
           hint="Past scheduled date"
           danger
           icon={<AlertTriangle />}
@@ -1066,8 +1155,8 @@ export default function Dashboard() {
 
         <Stat
           label="PM Due Soon"
-          value={counts.Pending}
-          hint="Within next 7 days"
+          value={filteredCounts.Pending}
+          hint="Within next 30 days"
           warning
           icon={<Clock3 />}
         />
@@ -1075,7 +1164,7 @@ export default function Dashboard() {
         <Stat
           label="Compliance Rate"
           value={`${compliance}%`}
-          hint={`${counts.Done} done / ${allPMs.length} scheduled`}
+          hint={`${filteredCounts.Done} done / ${filteredPMs.length} scheduled`}
           success
           icon={<CheckCircle2 />}
         />
@@ -1116,6 +1205,14 @@ export default function Dashboard() {
         />
 
         <Select
+          value={pmNumber}
+          setValue={setPmNumber}
+          options={["1", "2", "3", "4"]}
+          label="PM"
+          any="All PMs"
+        />
+
+        <Select
           value={status}
           setValue={setStatus}
           options={[
@@ -1135,24 +1232,36 @@ export default function Dashboard() {
           <p>Across all four PM schedules</p>
 
           <div className="bararea">
-            {campuses.map((c) => {
-              const pms = equipment
+            {filteredCampuses.map((c) => {
+              const pms = filtered
                 .filter((e) => e.campus === c)
                 .flatMap(
                   (e) => e.pm_schedules ?? []
+                )
+                .filter(
+                  (pm) =>
+                    pm.scheduled_date !== null &&
+                    (pmNumber === "All" ||
+                      pm.pm_no === Number(pmNumber))
                 );
 
               const max = Math.max(
                 1,
-                ...campuses.map(
+                ...filteredCampuses.map(
                   (x) =>
-                    equipment
+                    filtered
                       .filter(
                         (e) => e.campus === x
                       )
                       .flatMap(
                         (e) =>
                           e.pm_schedules ?? []
+                      )
+                      .filter(
+                        (pm) =>
+                          pm.scheduled_date !== null &&
+                          (pmNumber === "All" ||
+                            pm.pm_no === Number(pmNumber))
                       ).length
                 )
               );
@@ -1979,6 +2088,26 @@ function PMCell({
   }
 
   const s = getPMStatus(pm);
+
+  if (pm.scheduled_date === null) {
+    return (
+      <div className="pmcell">
+        <div className="pmdate">N/A</div>
+
+        <span className="status">N/A</span>
+
+        {userRole === "admin" && (
+          <button
+            className="edit-button"
+            onClick={() => openPMDateEditor(pm)}
+          >
+            <Pencil size={13} />
+            Edit Date
+          </button>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="pmcell">

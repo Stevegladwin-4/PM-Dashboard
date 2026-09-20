@@ -20,7 +20,7 @@ export function getPMStatus(pm: PMSchedule): PMStatus {
   );
 
   if (diffDays < 0) return "Overdue";
-  if (diffDays <= 7) return "Pending";
+  if (diffDays <= 30) return "Pending";
 
   return "Scheduled";
 }
