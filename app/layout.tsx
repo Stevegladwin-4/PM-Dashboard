@@ -5,6 +5,7 @@ import "./analytics.css";
 import "./recharts-analytics.css";
 import "./final-analytics.css";
 import "./schedule-search.css";
+import "./equipment-filter.css";
 import "./compact-analytics.css";
 import "./professional-analytics.css";
 import "./compact-chart-height.css";

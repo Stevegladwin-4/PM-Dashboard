@@ -16,9 +16,8 @@ import {
   Database,
   Download,
   FileSpreadsheet,
+  Layers,
   LogIn,
-  ListTodo,
-  MinusCircle,
   MonitorCog,
   Pencil,
   PieChart,
@@ -51,11 +50,17 @@ import {
 
 import { createClient } from "@/lib/supabase-browser";
 import { getPMStatus } from "@/lib/pm";
-import type { Equipment, PMSchedule } from "@/lib/types";
+import type {
+  Equipment,
+  PMSchedule,
+  PMStatus,
+  UserRole,
+  Section,
+} from "@/lib/types";
 
 const supabase = createClient();
 
-const emptyStats = {
+const emptyStats: Record<PMStatus, number> = {
   Done: 0,
   Overdue: 0,
   Pending: 0,
@@ -169,6 +174,8 @@ export default function Dashboard() {
   const router = useRouter();
   const [equipment, setEquipment] = useState<Equipment[]>([]);
   const [search, setSearch] = useState("");
+  const [equipmentFilter, setEquipmentFilter] = useState("All");
+  const [sectionFilter, setSectionFilter] = useState("All");
   const [campus, setCampus] = useState("All");
   const [department, setDepartment] = useState("All");
   const [contract, setContract] = useState("All");
@@ -180,7 +187,8 @@ export default function Dashboard() {
   const [connected, setConnected] = useState(true);
 
   const [userEmail, setUserEmail] = useState<string | null>(null);
-  const [userRole, setUserRole] = useState<string | null>(null);
+  const [userRole, setUserRole] = useState<UserRole | null>(null);
+  const [userSection, setUserSection] = useState<Section | null>(null);
 
   const [authOpen, setAuthOpen] = useState(false);
   const [loginType, setLoginType] = useState<"loginId" | "email">(
@@ -192,6 +200,16 @@ export default function Dashboard() {
   const [authMessage, setAuthMessage] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [showUserManagement, setShowUserManagement] = useState(false);
+  const [newUser, setNewUser] = useState({
+    login_id: "",
+    email: "",
+    password: "",
+    role: "technician",
+    section: "HIGH_END_RADIOLOGY",
+  });
+  const [creatingUser, setCreatingUser] = useState(false);
+  const [userMessage, setUserMessage] = useState("");
 
   const [showEquipmentForm, setShowEquipmentForm] = useState(false);
   const [showDueSoon, setShowDueSoon] = useState(false);
@@ -207,23 +225,153 @@ export default function Dashboard() {
   const [editingPM, setEditingPM] = useState<PMSchedule | null>(null);
   const [pmDate, setPmDate] = useState("");
 
+  const isSuperAdmin = userRole === "SUPER_ADMIN";
+  const isSuperViewer = userRole === "SUPER_VIEWER";
+  const isSectionAdmin = userRole === "section_admin";
+  const isTechnician = userRole === "technician";
+
+  const canManageEquipment =
+    isSuperAdmin || isSectionAdmin;
+
+  const canUpdatePM =
+    isSuperAdmin || isTechnician;
+
+  function canAccessEquipment(item: Equipment) {
+    if (isSuperAdmin || isSuperViewer) {
+      return true;
+    }
+
+    return Boolean(
+      userSection &&
+        item.section &&
+        item.section === userSection
+    );
+  }
+
+  function canManageThisEquipment(item: Equipment) {
+    if (isSuperAdmin) {
+      return true;
+    }
+
+    return (
+      isSectionAdmin &&
+      userSection !== null &&
+      item.section === userSection
+    );
+  }
+
+  function canUpdateThisPM(item: Equipment) {
+    if (isSuperAdmin) {
+      return true;
+    }
+
+    return (
+      isTechnician &&
+      userSection !== null &&
+      item.section === userSection
+    );
+  }
+
+  const getSectionHeading = () => {
+    if (
+      userRole === "SUPER_ADMIN" ||
+      userRole === "SUPER_VIEWER"
+    ) {
+      return getSectionLabel(sectionFilter).toUpperCase();
+    }
+
+    return userSection
+      ? getSectionLabel(userSection).toUpperCase()
+      : "SECTION";
+  };
+
+  async function createUser() {
+    if (!newUser.login_id.trim()) {
+      setUserMessage("Login ID is required");
+      return;
+    }
+
+    if (!newUser.email.trim()) {
+      setUserMessage("Email is required");
+      return;
+    }
+
+    if (!newUser.password) {
+      setUserMessage("Password is required");
+      return;
+    }
+
+    setCreatingUser(true);
+    setUserMessage("");
+
+    try {
+      const response = await fetch("/api/admin/create-user", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(newUser),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          result.error || "Failed to create user"
+        );
+      }
+
+      setUserMessage(
+        `User ${newUser.login_id} created successfully`
+      );
+
+      setNewUser({
+        login_id: "",
+        email: "",
+        password: "",
+        role: "technician",
+        section: "HIGH_END_RADIOLOGY",
+      });
+    } catch (error) {
+      setUserMessage(
+        error instanceof Error
+          ? error.message
+          : "Failed to create user"
+      );
+    } finally {
+      setCreatingUser(false);
+    }
+  }
+
   async function loadUserRole() {
     const {
       data: { user },
     } = await supabase.auth.getUser();
 
     if (!user) {
+      setUserEmail("");
       setUserRole(null);
+      setUserSection(null);
       return;
     }
 
-    const { data } = await supabase
+    setUserEmail(user.email ?? "");
+
+    const { data, error } = await supabase
       .from("user_roles")
-      .select("role")
+      .select("role, section")
       .eq("user_id", user.id)
       .maybeSingle();
 
-    setUserRole(data?.role ?? "viewer");
+    if (error) {
+      console.error("Failed to load user role:", error);
+      setUserRole(null);
+      setUserSection(null);
+      return;
+    }
+
+    setUserRole((data?.role as UserRole) ?? null);
+    setUserSection((data?.section as Section) ?? null);
   }
 
   async function load() {
@@ -290,68 +438,48 @@ export default function Dashboard() {
     };
   }, []);
 
-  const allPMs = useMemo(
-    () =>
-      equipment
-        .flatMap((e) => e.pm_schedules ?? [])
-        .filter((pm) => pm.scheduled_date !== null),
-    [equipment]
-  );
+  useEffect(() => {
+    if (
+      userRole !== "SUPER_ADMIN" &&
+      userRole !== "SUPER_VIEWER" &&
+      userSection
+    ) {
+      setSectionFilter(userSection);
+    }
+  }, [userRole, userSection]);
 
-  const summaryEquipment = useMemo(() => {
-    const q = search.toLowerCase().trim();
+  const sectionScopedEquipment = useMemo(() => {
+    if (
+      userRole === "SUPER_ADMIN" ||
+      userRole === "SUPER_VIEWER"
+    ) {
+      if (sectionFilter === "All") {
+        return equipment;
+      }
 
-    return equipment.filter((e) => {
-      const text = [
-        e.sno,
-        e.department,
-        e.inventory_no,
-        e.location,
-        e.equipment_name,
-        e.model,
-        e.serial_no,
-        e.make,
-        e.campus,
-        e.contract,
-      ]
-        .join(" ")
-        .toLowerCase();
+      return equipment.filter(
+        (e) => e.section === sectionFilter
+      );
+    }
 
-      if (q && !text.includes(q)) return false;
-      if (campus !== "All" && e.campus !== campus) return false;
-      if (department !== "All" && e.department !== department) return false;
-      if (contract !== "All" && e.contract !== contract) return false;
+    if (userSection) {
+      return equipment.filter(
+        (e) => e.section === userSection
+      );
+    }
 
-      return true;
-    });
-  }, [equipment, search, campus, department, contract]);
-
-  const summaryPMs = useMemo(
-    () =>
-      allPMs.filter(
-        (pm) =>
-          summaryEquipment.some((e) =>
-            (e.pm_schedules ?? []).some((item) => item.id === pm.id)
-          ) &&
-          (pmNumber === "All" || pm.pm_no === Number(pmNumber))
-      ),
-    [allPMs, summaryEquipment, pmNumber]
-  );
-
-  const counts = useMemo(() => {
-    const c = { ...emptyStats };
-
-    summaryPMs.forEach((pm) => {
-      c[getPMStatus(pm)]++;
-    });
-
-    return c;
-  }, [summaryPMs]);
+    return [];
+  }, [
+    equipment,
+    sectionFilter,
+    userRole,
+    userSection,
+  ]);
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase().trim();
 
-    return equipment.filter((e) => {
+    return sectionScopedEquipment.filter((e) => {
       const text = [
         e.sno,
         e.department,
@@ -368,6 +496,13 @@ export default function Dashboard() {
         .toLowerCase();
 
       if (q && !text.includes(q)) return false;
+      if (
+        equipmentFilter !== "All" &&
+        e.equipment_name !== equipmentFilter
+      ) {
+        return false;
+      }
+
       if (campus !== "All" && e.campus !== campus) return false;
       if (department !== "All" && e.department !== department) return false;
       if (contract !== "All" && e.contract !== contract) return false;
@@ -397,7 +532,16 @@ export default function Dashboard() {
 
       return true;
     });
-  }, [equipment, search, campus, department, contract, status, pmNumber]);
+  }, [
+    sectionScopedEquipment,
+    search,
+    equipmentFilter,
+    campus,
+    department,
+    contract,
+    status,
+    pmNumber,
+  ]);
 
   const scheduleFiltered = useMemo(() => {
     const q = scheduleSearch.toLowerCase().trim();
@@ -427,42 +571,139 @@ export default function Dashboard() {
     });
   }, [filtered, scheduleSearch]);
 
-  const filteredPMs = useMemo(
-    () =>
-      filtered
-        .flatMap((e) => e.pm_schedules ?? [])
-        .filter(
-          (pm) =>
-            pm.scheduled_date !== null &&
-            (pmNumber === "All" || pm.pm_no === Number(pmNumber))
-        ),
-    [filtered, pmNumber]
-  );
-
-  const filteredAllPMs = useMemo(
-    () =>
-      filtered
-        .flatMap((e) => e.pm_schedules ?? [])
-        .filter(
-          (pm) =>
-            pmNumber === "All" || pm.pm_no === Number(pmNumber)
-        ),
-    [filtered, pmNumber]
-  );
-
-  const filteredCounts = useMemo(() => {
-    const c = { ...emptyStats };
-
-    filteredAllPMs.forEach((pm) => {
-      c[getPMStatus(pm)]++;
-    });
+  const pmStatusStats = useMemo(() => {
+    const pms = filtered.flatMap((e) =>
+      (e.pm_schedules ?? []).filter(
+        (pm) => pm.scheduled_date !== null
+      )
+    );
 
     return {
-      ...c,
-      total: c.Done + c.Overdue + c.Pending + c.Scheduled,
-      NA: c["N/A"],
+      Done: pms.filter((pm) => getPMStatus(pm) === "Done").length,
+      Overdue: pms.filter((pm) => getPMStatus(pm) === "Overdue").length,
+      Pending: pms.filter((pm) => getPMStatus(pm) === "Pending").length,
+      Scheduled: pms.filter((pm) => getPMStatus(pm) === "Scheduled").length,
     };
-  }, [filteredAllPMs]);
+  }, [filtered]);
+
+  const pmCounters = useMemo(() => {
+    const pms = filtered.flatMap((e) =>
+      (e.pm_schedules ?? []).filter(
+        (pm) => pm.scheduled_date !== null
+      )
+    );
+
+    const dueSoon = pms.filter(
+      (pm) => getPMStatus(pm) === "Pending"
+    ).length;
+
+    const overdue = pms.filter(
+      (pm) => getPMStatus(pm) === "Overdue"
+    ).length;
+
+    return {
+      dueSoon,
+      overdue,
+      yetToBeDone: dueSoon + overdue,
+    };
+  }, [filtered]);
+
+  const filteredPMs = useMemo(
+    () =>
+      filtered.flatMap((e) =>
+        (e.pm_schedules ?? []).filter(
+          (pm) => pm.scheduled_date !== null
+        )
+      ),
+    [filtered]
+  );
+
+  const filteredCounts = {
+    ...pmStatusStats,
+    total:
+      pmStatusStats.Done +
+      pmStatusStats.Overdue +
+      pmStatusStats.Pending +
+      pmStatusStats.Scheduled,
+    NA: filtered.reduce(
+      (total, e) =>
+        total +
+        (e.pm_schedules ?? []).filter(
+          (pm) => pm.scheduled_date === null
+        ).length,
+      0
+    ),
+  };
+
+  const counts = pmStatusStats;
+  const allPMs = filteredPMs;
+
+  const overallCompliance = useMemo(() => {
+    const pms = filtered.flatMap((e) =>
+      (e.pm_schedules ?? []).filter(
+        (pm) => pm.scheduled_date !== null
+      )
+    );
+
+    const done = pms.filter(
+      (pm) => getPMStatus(pm) === "Done"
+    ).length;
+
+    return pms.length > 0
+      ? Math.round((done / pms.length) * 100)
+      : 0;
+  }, [filtered]);
+
+  const complianceDone = pmStatusStats.Done;
+  const complianceTotal =
+    pmStatusStats.Done +
+    pmStatusStats.Overdue +
+    pmStatusStats.Pending +
+    pmStatusStats.Scheduled;
+
+  const monthlyCompliance = useMemo(() => {
+    const now = new Date();
+
+    const monthStart = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      1
+    );
+
+    const nextMonthStart = new Date(
+      now.getFullYear(),
+      now.getMonth() + 1,
+      1
+    );
+
+    const monthPMs = filtered.flatMap((e) =>
+      (e.pm_schedules ?? []).filter((pm) => {
+        if (!pm.scheduled_date) return false;
+
+        const scheduled = new Date(
+          `${pm.scheduled_date}T00:00:00`
+        );
+
+        return (
+          scheduled >= monthStart &&
+          scheduled < nextMonthStart
+        );
+      })
+    );
+
+    const done = monthPMs.filter(
+      (pm) => getPMStatus(pm) === "Done"
+    ).length;
+
+    return {
+      done,
+      total: monthPMs.length,
+      compliance:
+        monthPMs.length > 0
+          ? Math.round((done / monthPMs.length) * 100)
+          : 0,
+    };
+  }, [filtered]);
 
   const filteredCampuses = [
     ...new Set(
@@ -474,12 +715,7 @@ export default function Dashboard() {
     ),
   ].sort();
 
-  const compliance = filteredPMs.length
-    ? Math.round(
-        (filteredCounts.Done / filteredPMs.length) * 100
-      )
-    : 0;
-  const compliancePercentage = compliance;
+  const compliancePercentage = overallCompliance;
 
   const dueSoonRows = filtered
     .flatMap((equipment) =>
@@ -622,27 +858,63 @@ export default function Dashboard() {
     compliance: item.percentage,
   }));
 
-  const campuses = [
-    ...new Set(
-      equipment
-        .map((e) => e.campus)
-        .filter((value): value is string => Boolean(value))
-    ),
-  ].sort();
+  const campuses = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          sectionScopedEquipment
+            .map((e) => e.campus)
+            .filter(
+              (value): value is string => Boolean(value)
+            )
+        )
+      ).sort(),
+    [sectionScopedEquipment]
+  );
 
-  const departments = [
-    ...new Set(equipment.map((e) => e.department).filter(Boolean)),
-  ].sort();
+  const departments = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          sectionScopedEquipment
+            .map((e) => e.department)
+            .filter(Boolean)
+        )
+      ).sort(),
+    [sectionScopedEquipment]
+  );
 
-  const contracts = [
-    ...new Set(
-      equipment
-        .map((e) => e.contract)
-        .filter((value): value is string => Boolean(value))
-    ),
-  ].sort();
+  const contracts = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          sectionScopedEquipment
+            .map((e) => e.contract)
+            .filter(
+              (value): value is string => Boolean(value)
+            )
+        )
+      ).sort(),
+    [sectionScopedEquipment]
+  );
+
+  const equipmentNames = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          sectionScopedEquipment
+            .map((e) => e.equipment_name)
+            .filter(Boolean)
+        )
+      ).sort(),
+    [sectionScopedEquipment]
+  );
 
   async function updatePM(pm: PMSchedule, completed: boolean) {
+    if (!canUpdatePM) {
+      return;
+    }
+
     const response = await fetch(`/api/pm/${pm.id}`, {
       method: "PATCH",
       headers: {
@@ -663,6 +935,10 @@ export default function Dashboard() {
   }
 
   async function markAll(e: Equipment) {
+    if (!canUpdateThisPM(e)) {
+      return;
+    }
+
     const pending = (e.pm_schedules ?? []).filter(
       (pm) => pm.scheduled_date !== null && !pm.completed_date
     );
@@ -1127,6 +1403,8 @@ export default function Dashboard() {
 
   function reset() {
     setSearch("");
+    setEquipmentFilter("All");
+    setSectionFilter("All");
     setCampus("All");
     setDepartment("All");
     setContract("All");
@@ -1346,6 +1624,44 @@ export default function Dashboard() {
         </div>
 
         <div className="actions">
+          {(userRole === "SUPER_ADMIN" ||
+            userRole === "SUPER_VIEWER") ? (
+            <div className="header-section-selector">
+              <Layers size={18} />
+
+              <span>Section:</span>
+
+              <select
+                value={sectionFilter}
+                onChange={(e) => setSectionFilter(e.target.value)}
+              >
+                <option value="All">All Sections</option>
+
+                <option value="HIGH_END_RADIOLOGY">
+                  High-End & Radiology
+                </option>
+
+                <option value="LIFE_SUPPORT">
+                  Life Support and Surgical
+                </option>
+
+                <option value="GENERAL_MONITORING">
+                  General Monitoring
+                </option>
+              </select>
+            </div>
+          ) : (
+            <div className="header-section-name">
+              <Layers size={18} />
+
+              <span>
+                {userSection
+                  ? getSectionLabel(userSection)
+                  : "Section"}
+              </span>
+            </div>
+          )}
+
           <button className="btn">
             <CalendarDays size={15} />
             As of <b>{fmtDate(new Date())}</b>
@@ -1384,6 +1700,17 @@ export default function Dashboard() {
             Reset
           </button>
 
+          {isSuperAdmin && (
+            <button
+              className="secondary-button"
+              onClick={() =>
+                setShowUserManagement((value) => !value)
+              }
+            >
+              User Management
+            </button>
+          )}
+
           {userEmail ? (
             <button
               className="btn"
@@ -1405,35 +1732,283 @@ export default function Dashboard() {
 
       <div className="dashboard-content">
       <section className="filter-bar dashboard-filter-bar">
-        <div className="searchbox">
-          <Search size={17} />
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search equipment, inventory, model..."
-          />
+        <div className="filter-field equipment-search">
+          <label>Equipment</label>
+
+          <div className="filter-search-box">
+            <Search size={16} />
+
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search equipment, inventory, serial no..."
+            />
+
+            {search && (
+              <button
+                type="button"
+                onClick={() => setSearch("")}
+                aria-label="Clear equipment search"
+              >
+                <X size={14} />
+              </button>
+            )}
+          </div>
         </div>
 
-        <Select value={campus} setValue={setCampus} options={campuses} label="Campus" />
-        <Select value={department} setValue={setDepartment} options={departments} label="Department" />
-        <Select value={contract} setValue={setContract} options={contracts} label="Contract" />
-        <Select value={pmNumber} setValue={setPmNumber} options={["1", "2", "3", "4"]} label="PM" any="All PMs" />
-        <Select value={status} setValue={setStatus} options={["Done", "Overdue", "Pending", "Scheduled"]} label="Status" any="Any status" />
+        <div className="filter-field equipment-select">
+          <label>Equipment</label>
+
+          <select
+            value={equipmentFilter}
+            onChange={(e) => setEquipmentFilter(e.target.value)}
+          >
+            <option value="All">All Equipment</option>
+
+            {equipmentNames.map((name) => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
+              ))}
+          </select>
+        </div>
+
+        {(userRole === "SUPER_ADMIN" ||
+          userRole === "SUPER_VIEWER") && (
+          <div className="filter-field section-filter">
+            <label>Section</label>
+
+            <select
+              value={sectionFilter}
+              onChange={(e) => setSectionFilter(e.target.value)}
+            >
+              <option value="All">All Sections</option>
+              <option value="HIGH_END_RADIOLOGY">
+                High-End & Radiology
+              </option>
+              <option value="LIFE_SUPPORT">
+                Life Support and Surgical
+              </option>
+              <option value="GENERAL_MONITORING">
+                General Monitoring
+              </option>
+            </select>
+          </div>
+        )}
+
+        <div className="filter-field">
+          <label>Campus</label>
+          <select value={campus} onChange={(e) => setCampus(e.target.value)}>
+            <option value="All">All Campuses</option>
+            {campuses.map((item) => (
+              <option key={item} value={item}>
+                {item}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="filter-field">
+          <label>Department</label>
+          <select value={department} onChange={(e) => setDepartment(e.target.value)}>
+            <option value="All">All Departments</option>
+            {departments.map((item) => (
+              <option key={item} value={item}>
+                {item}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="filter-field">
+          <label>Contract</label>
+          <select value={contract} onChange={(e) => setContract(e.target.value)}>
+            <option value="All">All Contracts</option>
+            {contracts.map((item) => (
+              <option key={item} value={item}>
+                {item}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="filter-field">
+          <label>PM</label>
+          <select value={pmNumber} onChange={(e) => setPmNumber(e.target.value)}>
+            <option value="All">All PMs</option>
+            <option value="1">PM 1</option>
+            <option value="2">PM 2</option>
+            <option value="3">PM 3</option>
+            <option value="4">PM 4</option>
+          </select>
+        </div>
+
+        <div className="filter-field">
+          <label>Status</label>
+          <select value={status} onChange={(e) => setStatus(e.target.value)}>
+            <option value="Any status">Any Status</option>
+            <option value="Done">Done</option>
+            <option value="Pending">Pending</option>
+            <option value="Overdue">Overdue</option>
+            <option value="Scheduled">Scheduled</option>
+          </select>
+        </div>
+
+        <button
+          type="button"
+          className="reset-filters"
+          onClick={reset}
+        >
+          Reset
+        </button>
       </section>
 
-      <section className="kpi-grid">
+      {isSuperAdmin && showUserManagement && (
+        <section className="user-management-card">
+          <div className="section-header">
+            <div>
+              <h2>User Management</h2>
+              <p>
+                Create section-based Login ID and password accounts
+              </p>
+            </div>
+          </div>
+
+          <div className="user-form-grid">
+            <div className="form-field">
+              <label>Login ID</label>
+              <input
+                type="text"
+                value={newUser.login_id}
+                onChange={(e) =>
+                  setNewUser({
+                    ...newUser,
+                    login_id: e.target.value,
+                  })
+                }
+                placeholder="Enter Login ID"
+              />
+            </div>
+
+            <div className="form-field">
+              <label>Email</label>
+              <input
+                type="email"
+                value={newUser.email}
+                onChange={(e) =>
+                  setNewUser({
+                    ...newUser,
+                    email: e.target.value,
+                  })
+                }
+                placeholder="Enter email"
+              />
+            </div>
+
+            <div className="form-field">
+              <label>Password</label>
+              <input
+                type="password"
+                value={newUser.password}
+                onChange={(e) =>
+                  setNewUser({
+                    ...newUser,
+                    password: e.target.value,
+                  })
+                }
+                placeholder="Enter password"
+              />
+            </div>
+
+            <div className="form-field">
+              <label>Role</label>
+              <select
+                value={newUser.role}
+                onChange={(e) => {
+                  const role = e.target.value;
+
+                  setNewUser({
+                    ...newUser,
+                    role,
+                    section:
+                      role === "SUPER_ADMIN" ||
+                      role === "SUPER_VIEWER"
+                        ? "None"
+                        : "HIGH_END_RADIOLOGY",
+                  });
+                }}
+              >
+                <option value="technician">Technician</option>
+                <option value="section_admin">Section Admin</option>
+                <option value="SUPER_VIEWER">Super Viewer</option>
+                <option value="SUPER_ADMIN">Super Admin</option>
+              </select>
+            </div>
+
+            <div className="form-field">
+              <label>Section</label>
+              <select
+                value={newUser.section}
+                disabled={
+                  newUser.role === "SUPER_ADMIN" ||
+                  newUser.role === "SUPER_VIEWER"
+                }
+                onChange={(e) =>
+                  setNewUser({
+                    ...newUser,
+                    section: e.target.value,
+                  })
+                }
+              >
+                <option value="None">No Section</option>
+                <option value="HIGH_END_RADIOLOGY">
+                  High-End & Radiology
+                </option>
+                <option value="LIFE_SUPPORT">
+                  Life Support and Surgical
+                </option>
+                <option value="GENERAL_MONITORING">
+                  General Monitoring
+                </option>
+              </select>
+            </div>
+          </div>
+
+          <div className="user-management-actions">
+            <button
+              className="primary-button"
+              onClick={createUser}
+              disabled={creatingUser}
+            >
+              {creatingUser ? "Creating..." : "Create User"}
+            </button>
+          </div>
+
+          {userMessage && (
+            <div className="user-message">{userMessage}</div>
+          )}
+        </section>
+      )}
+
+      <section className="kpi-grid stats-grid">
         <Stat label="TOTAL EQUIPMENT" value={filtered.length} hint="Equipment assets" icon={<MonitorCog />} />
         <Stat label="ACTIVE PMs" value={filteredCounts.total} hint="N/A excluded" icon={<ClipboardCheck />} />
         <Stat label="PM DONE" value={filteredCounts.Done} hint="Completed PMs" icon={<CheckCircle2 />} />
-        <Stat label="PM YET TO BE DONE" value={filteredCounts.Pending + filteredCounts.Overdue} hint={`${filteredCounts.Pending} due soon · ${filteredCounts.Overdue} overdue`} icon={<ListTodo />} />
         <div className="clickable-stat" onClick={() => setShowDueSoon(true)}>
           <Stat label="PM DUE SOON" value={filteredCounts.Pending} hint="Within next 30 days" warning icon={<Clock3 />} />
         </div>
         <div className="clickable-stat" onClick={() => setShowOverdue(true)}>
           <Stat label="OVERDUE" value={filteredCounts.Overdue} hint="Requires attention" danger icon={<AlertTriangle />} />
         </div>
-        <Stat label="COMPLIANCE" value={`${compliancePercentage}%`} hint={`${filteredCounts.Done} / ${filteredCounts.total} active PMs`} icon={<ShieldCheck />} />
-        <Stat label="N/A PMs" value={filteredCounts.NA} hint="Excluded from calculations" icon={<MinusCircle />} />
+        <Stat label="Compliance (Overall)" value={`${overallCompliance}%`} hint={`${complianceDone} / ${complianceTotal} active PMs`} icon={<ShieldCheck />} progress={overallCompliance} />
+        <Stat
+          label="Compliance (This Month)"
+          value={`${monthlyCompliance.compliance}%`}
+          hint={`${monthlyCompliance.done} / ${monthlyCompliance.total} PMs`}
+          icon={<CheckCircle2 />}
+          progress={monthlyCompliance.compliance}
+        />
       </section>
 
       <section className="analytics-section">
@@ -1635,12 +2210,14 @@ export default function Dashboard() {
                         </td>
 
                         <td>
-                          <button
-                            className="btn btn-primary"
-                            onClick={() => updatePM(pm, true)}
-                          >
-                            Mark Done
-                          </button>
+                          {canUpdateThisPM(equipment) && (
+                            <button
+                              className="btn btn-primary"
+                              onClick={() => updatePM(pm, true)}
+                            >
+                              Mark Done
+                            </button>
+                          )}
                         </td>
                       </tr>
                     );
@@ -1826,21 +2403,27 @@ export default function Dashboard() {
 
       </div>
 
-      <section className="panel equipment-table equipment-schedule-card">
-        <div className="equipment-schedule-header">
-          <div>
-            <h2>Equipment PM Schedule</h2>
+      <section className="schedule-section panel equipment-table equipment-schedule-card">
+        <div className="section-header schedule-header equipment-schedule-header">
+          <div className="section-banner">
+            <div>
+              <span className="section-eyebrow">
+                MAINTENANCE SECTION
+              </span>
 
+              <h2>{getSectionHeading()}</h2>
+            </div>
+
+            <div className="section-meta">
+              Preventive Maintenance
+            </div>
+          </div>
+
+          <div className="schedule-heading">
+            <h2>Equipment PM Schedule</h2>
             <p>
               Complete preventive maintenance schedule for all equipment
             </p>
-          </div>
-
-          <div className="schedule-mini-stats">
-            <div><strong>{filtered.length}</strong><span>Equipment</span></div>
-            <div><strong>{filteredCounts.total}</strong><span>Active PMs</span></div>
-            <div><strong>{filteredCounts.NA}</strong><span>N/A</span></div>
-            <div><strong>{filteredCounts.Pending + filteredCounts.Overdue}</strong><span>Yet to be Done</span></div>
           </div>
 
           <small>
@@ -1848,7 +2431,7 @@ export default function Dashboard() {
             equipment or PM data is hidden.
           </small>
 
-          {userRole === "admin" && (
+          {canManageEquipment && (
             <div className="admin-actions">
               <button
                 type="button"
@@ -1880,7 +2463,7 @@ export default function Dashboard() {
           )}
         </div>
 
-        <div className="schedule-search-bar">
+        <div className="schedule-search schedule-search-bar">
           <div className="schedule-search-box">
             <Search size={17} />
             <input
@@ -1906,11 +2489,14 @@ export default function Dashboard() {
           </div>
         </div>
 
-        <div className="tablewrap table-wrap equipment-schedule-table">
+        <div className="table-container tablewrap table-wrap equipment-schedule-table">
           <table>
             <thead>
               <tr>
                 <th>S.NO</th>
+                {sectionFilter === "All" && (
+                  <th>SECTION</th>
+                )}
                 <th>DEPARTMENT</th>
                 <th>INVENTORY NO</th>
                 <th>LOCATION</th>
@@ -1925,7 +2511,7 @@ export default function Dashboard() {
                 <th>PM 3</th>
                 <th>PM 4</th>
 
-                {userRole === "admin" && (
+                {canManageEquipment && (
                   <th>ACTIONS</th>
                 )}
               </tr>
@@ -1936,9 +2522,8 @@ export default function Dashboard() {
                 <tr>
                   <td
                     colSpan={
-                      userRole === "admin"
-                        ? 15
-                        : 14
+                      (canManageEquipment ? 15 : 14) +
+                      (sectionFilter === "All" ? 1 : 0)
                     }
                     className="empty"
                   >
@@ -1949,9 +2534,8 @@ export default function Dashboard() {
                 <tr>
                   <td
                     colSpan={
-                      userRole === "admin"
-                        ? 15
-                        : 14
+                      (canManageEquipment ? 15 : 14) +
+                      (sectionFilter === "All" ? 1 : 0)
                     }
                     className="empty"
                   >
@@ -1959,11 +2543,14 @@ export default function Dashboard() {
                   </td>
                 </tr>
               ) : (
-                scheduleFiltered.map((e) => (
+                scheduleFiltered.map((e, index) => (
                   <EquipmentRow
                     key={e.id}
                     e={e}
-                    userRole={userRole}
+                    index={index}
+                    showSection={sectionFilter === "All"}
+                    canManage={canManageThisEquipment(e)}
+                    canUpdate={canUpdateThisPM(e)}
                     updatePM={updatePM}
                     markAll={markAll}
                     openEquipmentForm={
@@ -2451,6 +3038,7 @@ function Stat({
   danger,
   warning,
   success,
+  progress,
 }: {
   label: string;
   value: string | number;
@@ -2459,29 +3047,28 @@ function Stat({
   danger?: boolean;
   warning?: boolean;
   success?: boolean;
+  progress?: number;
 }) {
-  return (
-    <div className="stat">
-      <div className="statTop">
-        <span>{label}</span>
+  const statusClass = danger
+    ? "kpi-danger"
+    : warning
+    ? "kpi-warning"
+    : success
+    ? "kpi-success"
+    : "";
 
-        <i
-          className={
-            danger
-              ? "red"
-              : warning
-              ? "orange"
-              : success
-              ? "green"
-              : ""
-          }
-        >
+  return (
+    <div className={`stat kpi-card ${statusClass}`}>
+      <div className="statTop kpi-card-header">
+        <span className="kpi-label">{label}</span>
+
+        <i className="stat-card-icon kpi-card-icon">
           {icon}
         </i>
       </div>
 
       <strong
-        className={
+        className={`kpi-value ${
           danger
             ? "redText"
             : warning
@@ -2489,12 +3076,23 @@ function Stat({
             : success
             ? "greenText"
             : ""
-        }
+          }`}
       >
         {value}
       </strong>
 
-      <small>{hint}</small>
+      <small className="kpi-subtitle">{hint}</small>
+
+      {progress !== undefined && (
+        <div className="kpi-progress" aria-hidden="true">
+          <div
+            className="kpi-progress-bar"
+            style={{
+              width: `${Math.min(100, Math.max(0, progress))}%`,
+            }}
+          />
+        </div>
+      )}
     </div>
   );
 }
@@ -2673,7 +3271,10 @@ function Select({
 
 function EquipmentRow({
   e,
-  userRole,
+  index,
+  showSection,
+  canManage,
+  canUpdate,
   updatePM,
   markAll,
   openEquipmentForm,
@@ -2681,7 +3282,10 @@ function EquipmentRow({
   openPMDateEditor,
 }: {
   e: Equipment;
-  userRole: string | null;
+  index: number;
+  showSection: boolean;
+  canManage: boolean;
+  canUpdate: boolean;
   updatePM: (
     pm: PMSchedule,
     completed: boolean
@@ -2702,7 +3306,15 @@ function EquipmentRow({
 
   return (
     <tr>
-      <td>{e.sno}</td>
+      <td>{index + 1}</td>
+
+      {showSection && (
+        <td>
+          {e.section
+            ? getSectionLabel(e.section)
+            : "-"}
+        </td>
+      )}
 
       <td>
         <b>{e.department}</b>
@@ -2739,13 +3351,14 @@ function EquipmentRow({
           <PMCell
             pm={pm(n)}
             updatePM={updatePM}
-            userRole={userRole}
+            canManage={canManage}
+            canUpdate={canUpdate}
             openPMDateEditor={
               openPMDateEditor
             }
           />
 
-          {n === 4 && (
+          {n === 4 && canUpdate && (
             <button
               className="markAll"
               onClick={() =>
@@ -2758,7 +3371,7 @@ function EquipmentRow({
         </td>
       ))}
 
-      {userRole === "admin" && (
+      {canManage && (
         <td>
           <div className="row-actions">
             <button
@@ -2790,7 +3403,8 @@ function EquipmentRow({
 function PMCell({
   pm,
   updatePM,
-  userRole,
+  canManage,
+  canUpdate,
   openPMDateEditor,
 }: {
   pm?: PMSchedule;
@@ -2798,7 +3412,8 @@ function PMCell({
     pm: PMSchedule,
     completed: boolean
   ) => void;
-  userRole: string | null;
+  canManage: boolean;
+  canUpdate: boolean;
   openPMDateEditor: (
     pm: PMSchedule
   ) => void;
@@ -2816,7 +3431,7 @@ function PMCell({
 
         <span className="status">N/A</span>
 
-        {userRole === "admin" && (
+        {canManage && (
           <button
             className="edit-button"
             onClick={() => openPMDateEditor(pm)}
@@ -2841,7 +3456,7 @@ function PMCell({
         {s}
       </span>
 
-      {s === "Done" ? (
+      {canUpdate && (s === "Done" ? (
         <button
           className="undo"
           onClick={() =>
@@ -2859,9 +3474,9 @@ function PMCell({
         >
           ✓ Mark Done
         </button>
-      )}
+      ))}
 
-      {userRole === "admin" && (
+      {canManage && (
         <button
           className="edit-button"
           onClick={() =>
@@ -2874,4 +3489,17 @@ function PMCell({
       )}
     </div>
   );
+}
+
+function getSectionLabel(section: string | null) {
+  switch (section) {
+    case "HIGH_END_RADIOLOGY":
+      return "High-End & Radiology";
+    case "LIFE_SUPPORT":
+      return "Life Support and Surgical";
+    case "GENERAL_MONITORING":
+      return "General Monitoring";
+    default:
+      return "All Sections";
+  }
 }

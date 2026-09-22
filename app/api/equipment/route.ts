@@ -13,6 +13,7 @@ type EquipmentInput = {
   make?: string;
   campus?: string;
   contract?: string;
+  section?: string | null;
   pm_dates?: Record<string, string | null>;
 };
 
@@ -30,9 +31,8 @@ function validDate(value: unknown) {
     : "";
 }
 
-async function getUserAndRole() {
+async function getCurrentUserRole() {
   const supabase = await createClient();
-
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -42,19 +42,20 @@ async function getUserAndRole() {
       supabase,
       user: null,
       role: null,
+      section: null,
     };
   }
 
   const { data: roleData } = await supabase
     .from("user_roles")
-    .select("role")
+    .select("role, section")
     .eq("user_id", user.id)
     .maybeSingle();
 
   return {
-    supabase,
     user,
     role: roleData?.role ?? null,
+    section: roleData?.section ?? null,
   };
 }
 
@@ -62,7 +63,8 @@ async function getUserAndRole() {
  * GET
  */
 export async function GET() {
-  const { supabase, user } = await getUserAndRole();
+  const supabase = await createClient();
+  const { user } = await getCurrentUserRole();
 
   if (!user) {
     return NextResponse.json(
@@ -96,8 +98,12 @@ export async function GET() {
  *   UPDATE equipment + PM1-4
  */
 export async function POST(request: Request) {
-  const { supabase, user, role } =
-    await getUserAndRole();
+  const supabase = await createClient();
+  const {
+    user,
+    role,
+    section: userSection,
+  } = await getCurrentUserRole();
 
   if (!user) {
     return NextResponse.json(
@@ -106,9 +112,12 @@ export async function POST(request: Request) {
     );
   }
 
-  if (role !== "admin") {
+  if (
+    role !== "SUPER_ADMIN" &&
+    role !== "section_admin"
+  ) {
     return NextResponse.json(
-      { error: "Admin permission required." },
+      { error: "Forbidden" },
       { status: 403 }
     );
   }
@@ -116,6 +125,31 @@ export async function POST(request: Request) {
   try {
     const body =
       (await request.json()) as EquipmentInput;
+
+    const equipmentSection =
+      role === "SUPER_ADMIN"
+        ? body.section
+        : userSection;
+
+    if (!equipmentSection) {
+      return NextResponse.json(
+        { error: "Equipment section is required" },
+        { status: 400 }
+      );
+    }
+
+    if (
+      role === "section_admin" &&
+      equipmentSection !== userSection
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "You can only add equipment to your assigned section",
+        },
+        { status: 403 }
+      );
+    }
 
     const sno = Number(body.sno);
     const department = clean(body.department);
@@ -163,6 +197,7 @@ export async function POST(request: Request) {
       make: clean(body.make),
       campus: clean(body.campus),
       contract: clean(body.contract),
+      section: equipmentSection,
     };
 
     /*
@@ -179,6 +214,20 @@ export async function POST(request: Request) {
       return NextResponse.json(
         { error: findError.message },
         { status: 400 }
+      );
+    }
+
+    if (
+      existing &&
+      role === "section_admin" &&
+      existing.section !== userSection
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "You can only edit equipment in your assigned section",
+        },
+        { status: 403 }
       );
     }
 
@@ -330,8 +379,12 @@ export async function POST(request: Request) {
  * Used by Edit Equipment.
  */
 export async function PATCH(request: Request) {
-  const { supabase, user, role } =
-    await getUserAndRole();
+  const supabase = await createClient();
+  const {
+    user,
+    role,
+    section: userSection,
+  } = await getCurrentUserRole();
 
   if (!user) {
     return NextResponse.json(
@@ -340,9 +393,12 @@ export async function PATCH(request: Request) {
     );
   }
 
-  if (role !== "admin") {
+  if (
+    role !== "SUPER_ADMIN" &&
+    role !== "section_admin"
+  ) {
     return NextResponse.json(
-      { error: "Admin permission required." },
+      { error: "Forbidden" },
       { status: 403 }
     );
   }
@@ -358,6 +414,47 @@ export async function PATCH(request: Request) {
       );
     }
 
+    const {
+      data: existingEquipment,
+      error: existingError,
+    } = await supabase
+      .from("equipment")
+      .select("id, section")
+      .eq("id", body.id)
+      .single();
+
+    if (existingError || !existingEquipment) {
+      return NextResponse.json(
+        { error: "Equipment not found" },
+        { status: 404 }
+      );
+    }
+
+    if (
+      role === "section_admin" &&
+      existingEquipment.section !== userSection
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "You can only edit equipment in your assigned section",
+        },
+        { status: 403 }
+      );
+    }
+
+    const updatedSection =
+      role === "SUPER_ADMIN"
+        ? body.section ?? existingEquipment.section
+        : userSection;
+
+    if (!updatedSection) {
+      return NextResponse.json(
+        { error: "Equipment section is required" },
+        { status: 400 }
+      );
+    }
+
     const updates = {
       sno: Number(body.sno),
       department: clean(body.department),
@@ -369,6 +466,7 @@ export async function PATCH(request: Request) {
       make: clean(body.make),
       campus: clean(body.campus),
       contract: clean(body.contract),
+      section: updatedSection,
     };
 
     if (
@@ -471,8 +569,12 @@ export async function PATCH(request: Request) {
  * DELETE
  */
 export async function DELETE(request: Request) {
-  const { supabase, user, role } =
-    await getUserAndRole();
+  const supabase = await createClient();
+  const {
+    user,
+    role,
+    section: userSection,
+  } = await getCurrentUserRole();
 
   if (!user) {
     return NextResponse.json(
@@ -481,9 +583,12 @@ export async function DELETE(request: Request) {
     );
   }
 
-  if (role !== "admin") {
+  if (
+    role !== "SUPER_ADMIN" &&
+    role !== "section_admin"
+  ) {
     return NextResponse.json(
-      { error: "Admin permission required." },
+      { error: "Forbidden" },
       { status: 403 }
     );
   }
@@ -495,6 +600,35 @@ export async function DELETE(request: Request) {
       return NextResponse.json(
         { error: "Equipment ID is required." },
         { status: 400 }
+      );
+    }
+
+    const {
+      data: existingEquipment,
+      error: existingError,
+    } = await supabase
+      .from("equipment")
+      .select("id, section")
+      .eq("id", body.id)
+      .single();
+
+    if (existingError || !existingEquipment) {
+      return NextResponse.json(
+        { error: "Equipment not found" },
+        { status: 404 }
+      );
+    }
+
+    if (
+      role === "section_admin" &&
+      existingEquipment.section !== userSection
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "You can only delete equipment in your assigned section",
+        },
+        { status: 403 }
       );
     }
 

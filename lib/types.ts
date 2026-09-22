@@ -5,6 +5,17 @@ export type PMStatus =
   | "Scheduled"
   | "N/A";
 
+export type UserRole =
+  | "SUPER_ADMIN"
+  | "SUPER_VIEWER"
+  | "section_admin"
+  | "technician";
+
+export type Section =
+  | "HIGH_END_RADIOLOGY"
+  | "LIFE_SUPPORT"
+  | "GENERAL_MONITORING";
+
 export type PMSchedule = {
   id: string;
   equipment_id: string;
@@ -26,5 +37,13 @@ export type Equipment = {
   make: string | null;
   campus: string | null;
   contract: string | null;
+  section: Section | null;
   pm_schedules: PMSchedule[];
+};
+
+export type UserRoleRecord = {
+  user_id: string;
+  login_id: string | null;
+  role: UserRole;
+  section: Section | null;
 };

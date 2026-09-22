@@ -9,7 +9,62 @@ export async function PATCH(
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+  const { data: roleData } = await supabase
+    .from("user_roles")
+    .select("role, section")
+    .eq("user_id", user.id)
+    .maybeSingle();
+
+  if (!roleData) {
+    return NextResponse.json(
+      { error: "User role not found" },
+      { status: 403 }
+    );
+  }
+
   const { id } = await params;
+
+  const { data: pm, error: pmError } = await supabase
+    .from("pm_schedules")
+    .select(`
+      id,
+      equipment_id,
+      equipment:equipment_id (
+        id,
+        section
+      )
+    `)
+    .eq("id", id)
+    .single();
+
+  if (pmError || !pm) {
+    return NextResponse.json(
+      { error: "PM schedule not found" },
+      { status: 404 }
+    );
+  }
+
+  const equipmentRelation = pm.equipment as unknown as
+    | { section: string | null }
+    | Array<{ section: string | null }>
+    | null;
+
+  const equipmentSection = Array.isArray(equipmentRelation)
+    ? equipmentRelation[0]?.section
+    : equipmentRelation?.section;
+
+  const allowed =
+    roleData.role === "SUPER_ADMIN" ||
+    (roleData.role === "technician" &&
+      roleData.section === equipmentSection);
+
+  if (!allowed) {
+    return NextResponse.json(
+      { error: "You are not allowed to update this PM" },
+      { status: 403 }
+    );
+  }
+
   const body = await request.json();
 
   const updateData: {
