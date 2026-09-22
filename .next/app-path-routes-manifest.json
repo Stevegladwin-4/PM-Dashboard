@@ -1,9 +1,0 @@
-{
-  "/_global-error/page": "/_global-error",
-  "/_not-found/page": "/_not-found",
-  "/api/auth/login-id/route": "/api/auth/login-id",
-  "/api/equipment/route": "/api/equipment",
-  "/api/pm/[id]/route": "/api/pm/[id]",
-  "/page": "/",
-  "/reset-password/page": "/reset-password"
-}

@@ -48,7 +48,7 @@ import {
   YAxis,
 } from "recharts";
 
-import { createClient } from "@/lib/supabase-browser";
+import { supabase } from "@/lib/supabase-browser";
 import { getPMStatus } from "@/lib/pm";
 import type {
   Equipment,
@@ -57,8 +57,6 @@ import type {
   UserRole,
   Section,
 } from "@/lib/types";
-
-const supabase = createClient();
 
 const emptyStats: Record<PMStatus, number> = {
   Done: 0,

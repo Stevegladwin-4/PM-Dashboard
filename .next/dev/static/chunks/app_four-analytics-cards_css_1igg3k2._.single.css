@@ -1,0 +1,113 @@
+/* [project]/app/four-analytics-cards.css [app-client] (css) */
+.analytics-grid-four {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  width: 100%;
+  display: grid;
+}
+
+.analytics-grid-four .chart-card {
+  box-sizing: border-box;
+  background: #fff;
+  border: 1px solid #e2e8f2;
+  border-radius: 18px;
+  width: 100%;
+  height: 220px;
+  padding: 20px 18px;
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 6px 18px #0f234112;
+}
+
+.analytics-grid-four .chart-header {
+  justify-content: space-between;
+  align-items: flex-start;
+  height: 35px;
+  display: flex;
+}
+
+.analytics-grid-four .chart-header h2 {
+  color: #172033;
+  margin: 0;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.analytics-grid-four .chart-header p {
+  color: #718096;
+  margin: 5px 0 0;
+  font-size: 9px;
+}
+
+.analytics-grid-four .chart-header svg {
+  box-sizing: content-box;
+  color: #3155f5;
+  background: #edf3ff;
+  border-radius: 16px;
+  width: 18px;
+  height: 18px;
+  padding: 9px;
+}
+
+.analytics-grid-four .chart-area {
+  width: 100%;
+  height: 145px;
+  margin-top: 2px;
+}
+
+.analytics-grid-four .department-chart {
+  height: 145px;
+}
+
+.analytics-grid-four .recharts-text, .analytics-grid-four .recharts-cartesian-axis-tick-value {
+  font-size: 8px;
+}
+
+.analytics-grid-four .recharts-legend-item-text {
+  font-size: 8px !important;
+}
+
+.analytics-grid-four .donut-center {
+  top: 56%;
+}
+
+.analytics-grid-four .donut-center strong {
+  font-size: 20px;
+}
+
+.analytics-grid-four .donut-center span {
+  font-size: 7px;
+}
+
+.analytics-grid-four .chart-card {
+  transition: transform .18s, box-shadow .18s;
+}
+
+.analytics-grid-four .chart-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 25px #0f23411a;
+}
+
+@media (max-width: 1350px) {
+  .analytics-grid-four {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 700px) {
+  .analytics-grid-four {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .analytics-grid-four .chart-card {
+    height: 220px;
+  }
+
+  .analytics-grid-four .chart-area, .analytics-grid-four .department-chart {
+    height: 145px;
+  }
+}
+
+/*# sourceMappingURL=app_four-analytics-cards_css_1igg3k2._.single.css.map*/

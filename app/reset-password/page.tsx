@@ -1,11 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { createClient } from "../../lib/supabase-browser";
+import { supabase } from "../../lib/supabase-browser";
 
 export default function ResetPasswordPage() {
-  const supabase = createClient();
-
   const [password, setPassword] = useState("");
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);

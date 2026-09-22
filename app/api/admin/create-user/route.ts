@@ -1,132 +1,168 @@
 import { NextResponse } from "next/server";
-import { createClient as createAdminClient } from "@supabase/supabase-js";
-import { createClient } from "@/lib/supabase-server";
+import { createClient } from "@supabase/supabase-js";
+import { createServerClient } from "@/lib/supabase-server";
+import { cookies } from "next/headers";
 
-const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+const validRoles = [
+  "SUPER_ADMIN",
+  "SUPER_VIEWER",
+  "section_admin",
+  "technician",
+];
+
+const validSections = [
+  "HIGH_END_RADIOLOGY",
+  "LIFE_SUPPORT",
+  "GENERAL_MONITORING",
+];
 
 export async function POST(request: Request) {
   try {
-    if (!serviceRoleKey || !supabaseUrl) {
+    if (!supabaseUrl || !serviceRoleKey) {
       return NextResponse.json(
-        { error: "Supabase server configuration is missing" },
+        { error: "Server Supabase configuration is missing" },
         { status: 500 }
       );
     }
 
-    const supabase = await createClient();
+    // Check logged-in user
+    const cookieStore = await cookies();
+    const supabase = createServerClient(cookieStore);
 
     const {
       data: { user: currentUser },
+      error: authError,
     } = await supabase.auth.getUser();
 
-    if (!currentUser) {
+    if (authError) {
+      console.error("AUTH ERROR:", authError);
+
       return NextResponse.json(
-        { error: "Unauthorized" },
+        { error: `Authentication error: ${authError.message}` },
         { status: 401 }
       );
     }
 
-    const { data: currentRole, error: roleError } =
-      await supabase
-        .from("user_roles")
-        .select("role")
-        .eq("user_id", currentUser.id)
-        .maybeSingle();
-
-    if (roleError || currentRole?.role !== "SUPER_ADMIN") {
+    if (!currentUser) {
       return NextResponse.json(
-        { error: "Only SUPER_ADMIN can create users" },
+        { error: "You are not logged in" },
+        { status: 401 }
+      );
+    }
+
+    // Check current user's role
+    const {
+      data: currentRole,
+      error: roleError,
+    } = await supabase
+      .from("user_roles")
+      .select("role, section")
+      .eq("user_id", currentUser.id)
+      .maybeSingle();
+
+    if (roleError) {
+      console.error("ROLE ERROR:", roleError);
+
+      return NextResponse.json(
+        { error: `Could not read your role: ${roleError.message}` },
+        { status: 500 }
+      );
+    }
+
+    if (currentRole?.role !== "SUPER_ADMIN") {
+      return NextResponse.json(
+        {
+          error: `Only SUPER_ADMIN can create users. Current role: ${
+            currentRole?.role ?? "none"
+          }`,
+        },
         { status: 403 }
       );
     }
 
+    // Read request
     const body = await request.json();
 
     const loginId = String(body.login_id ?? "").trim();
     const email = String(body.email ?? "").trim().toLowerCase();
     const password = String(body.password ?? "");
-    const role = String(body.role ?? "");
+    const role = String(body.role ?? "").trim();
+
     const section =
-      body.section === "None" || !body.section
+      body.section === "None" ||
+      body.section === "" ||
+      body.section === null ||
+      body.section === undefined
         ? null
-        : String(body.section);
+        : String(body.section).trim();
 
-    if (!loginId || !email || !password || !role) {
+    // Validate Login ID
+    if (!loginId) {
+      return NextResponse.json(
+        { error: "Login ID is required" },
+        { status: 400 }
+      );
+    }
+
+    // Validate email
+    if (!email) {
+      return NextResponse.json(
+        { error: "Email is required" },
+        { status: 400 }
+      );
+    }
+
+    // Validate password
+    if (!password || password.length < 6) {
+      return NextResponse.json(
+        { error: "Password must be at least 6 characters" },
+        { status: 400 }
+      );
+    }
+
+    // Validate role
+    if (!validRoles.includes(role)) {
       return NextResponse.json(
         {
-          error:
-            "Login ID, email, password and role are required",
+          error: `Invalid role "${role}". Allowed roles: ${validRoles.join(
+            ", "
+          )}`,
         },
         { status: 400 }
       );
     }
 
-    const allowedRoles = [
-      "SUPER_ADMIN",
-      "SUPER_VIEWER",
-      "section_admin",
-      "technician",
-    ];
-
-    if (!allowedRoles.includes(role)) {
-      return NextResponse.json(
-        { error: "Invalid role" },
-        { status: 400 }
-      );
+    // SUPER_ADMIN and SUPER_VIEWER don't need a section
+    if (role === "SUPER_ADMIN" || role === "SUPER_VIEWER") {
+      if (section !== null) {
+        return NextResponse.json(
+          {
+            error:
+              "SUPER_ADMIN and SUPER_VIEWER users must have no section assigned",
+          },
+          { status: 400 }
+        );
+      }
     }
 
-    const allowedSections = [
-      "HIGH_END_RADIOLOGY",
-      "LIFE_SUPPORT",
-      "GENERAL_MONITORING",
-    ];
-
-    if (section && !allowedSections.includes(section)) {
-      return NextResponse.json(
-        { error: "Invalid section" },
-        { status: 400 }
-      );
+    // Section users must have a valid section
+    if (role === "section_admin" || role === "technician") {
+      if (!section || !validSections.includes(section)) {
+        return NextResponse.json(
+          {
+            error:
+              "A valid section is required for section_admin and technician",
+          },
+          { status: 400 }
+        );
+      }
     }
 
-    if (
-      (role === "SUPER_ADMIN" ||
-        role === "SUPER_VIEWER") &&
-      section !== null
-    ) {
-      return NextResponse.json(
-        {
-          error:
-            "SUPER_ADMIN and SUPER_VIEWER must not have a section",
-        },
-        { status: 400 }
-      );
-    }
-
-    if (
-      (role === "section_admin" ||
-        role === "technician") &&
-      !section
-    ) {
-      return NextResponse.json(
-        {
-          error:
-            "Section is required for section_admin and technician",
-        },
-        { status: 400 }
-      );
-    }
-
-    if (password.length < 6) {
-      return NextResponse.json(
-        {
-          error: "Password must be at least 6 characters",
-        },
-        { status: 400 }
-      );
-    }
-
-    const adminClient = createAdminClient(
+    // Use service-role client ONLY on the server
+    const adminClient = createClient(
       supabaseUrl,
       serviceRoleKey,
       {
@@ -137,6 +173,21 @@ export async function POST(request: Request) {
       }
     );
 
+    // Check duplicate Login ID
+    const { data: existingLogin } = await adminClient
+      .from("user_roles")
+      .select("user_id")
+      .eq("login_id", loginId)
+      .maybeSingle();
+
+    if (existingLogin) {
+      return NextResponse.json(
+        { error: "Login ID already exists" },
+        { status: 400 }
+      );
+    }
+
+    // Create Supabase Auth user
     const {
       data: createdUser,
       error: createUserError,
@@ -146,56 +197,66 @@ export async function POST(request: Request) {
       email_confirm: true,
     });
 
-    if (createUserError || !createdUser.user) {
+    if (createUserError) {
+      console.error("AUTH CREATE ERROR:", createUserError);
+
       return NextResponse.json(
-        {
-          error:
-            createUserError?.message ??
-            "Failed to create Auth user",
-        },
+        { error: createUserError.message },
         { status: 400 }
       );
     }
 
-    const { error: roleInsertError } =
-      await adminClient
-        .from("user_roles")
-        .insert({
-          user_id: createdUser.user.id,
-          login_id: loginId,
-          role,
-          section,
-        });
-
-    if (roleInsertError) {
-      await adminClient.auth.admin.deleteUser(
-        createdUser.user.id
+    if (!createdUser.user) {
+      return NextResponse.json(
+        { error: "Supabase did not return the created user" },
+        { status: 500 }
       );
+    }
+
+    // Create application role
+    const {
+      error: insertRoleError,
+    } = await adminClient.from("user_roles").insert({
+      user_id: createdUser.user.id,
+      login_id: loginId,
+      role,
+      section,
+    });
+
+    if (insertRoleError) {
+      console.error("USER ROLE INSERT ERROR:", insertRoleError);
+
+      // Roll back Auth user if role insert fails
+      await adminClient.auth.admin.deleteUser(createdUser.user.id);
 
       return NextResponse.json(
         {
-          error: roleInsertError.message,
+          error: `User account was created but role setup failed: ${insertRoleError.message}`,
         },
-        { status: 400 }
+        { status: 500 }
       );
     }
 
     return NextResponse.json({
       success: true,
+      message: "User created successfully",
       user: {
         id: createdUser.user.id,
-        email,
+        email: createdUser.user.email,
         login_id: loginId,
         role,
         section,
       },
     });
   } catch (error) {
-    console.error("Create user error:", error);
+    console.error("CREATE USER UNEXPECTED ERROR:", error);
 
     return NextResponse.json(
       {
-        error: "Unexpected server error",
+        error:
+          error instanceof Error
+            ? error.message
+            : "Unexpected server error",
       },
       { status: 500 }
     );

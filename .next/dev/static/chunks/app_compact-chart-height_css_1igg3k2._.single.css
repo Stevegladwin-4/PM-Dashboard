@@ -1,0 +1,88 @@
+/* [project]/app/compact-chart-height.css [app-client] (css) */
+.analytics-grid-four {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  display: grid;
+}
+
+.chart-card {
+  background: linear-gradient(145deg, #fff 0%, #fbfdff 100%);
+  border: 1px solid #e1e8f2;
+  border-radius: 13px;
+  min-width: 0;
+  height: 220px;
+  padding: 11px 12px;
+  overflow: hidden;
+  box-shadow: 0 4px 14px #142d500d;
+}
+
+.chart-header {
+  min-height: 30px;
+}
+
+.chart-header h2 {
+  font-size: 12px;
+}
+
+.chart-header p {
+  margin-top: 3px;
+  font-size: 8px;
+}
+
+.chart-header svg {
+  width: 16px;
+  height: 16px;
+  padding: 5px;
+}
+
+.chart-area {
+  height: 170px;
+  margin-top: 0;
+}
+
+.department-chart {
+  height: 170px;
+}
+
+.chart-card .recharts-text, .chart-card .recharts-cartesian-axis-tick-value {
+  font-size: 8px;
+}
+
+.chart-card .recharts-legend-item-text {
+  font-size: 8px !important;
+}
+
+.donut-center {
+  top: 50%;
+}
+
+.donut-center strong {
+  font-size: 20px;
+}
+
+.donut-center span {
+  font-size: 7px;
+}
+
+@media (max-width: 1350px) {
+  .analytics-grid-four {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 700px) {
+  .analytics-grid-four {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .chart-card {
+    height: 230px;
+  }
+
+  .chart-area, .department-chart {
+    height: 180px;
+  }
+}
+
+/*# sourceMappingURL=app_compact-chart-height_css_1igg3k2._.single.css.map*/

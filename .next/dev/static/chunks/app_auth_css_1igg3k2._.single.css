@@ -1,0 +1,58 @@
+/* [project]/app/auth.css [app-client] (css) */
+.login-methods {
+  background: #eef2f7;
+  border-radius: 10px;
+  grid-template-columns: 1fr 1fr;
+  gap: 5px;
+  margin-bottom: 20px;
+  padding: 5px;
+  display: grid;
+}
+
+.login-method {
+  color: #64748b;
+  cursor: pointer;
+  background: none;
+  border: 0;
+  border-radius: 7px;
+  height: 38px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.login-method.active {
+  color: #fff;
+  background: linear-gradient(135deg, #3155f5, #4c6fff);
+  box-shadow: 0 3px 8px #3155f533;
+}
+
+.login-field {
+  flex-direction: column;
+  gap: 5px;
+  margin-bottom: 10px;
+  display: flex;
+}
+
+.login-field label {
+  color: #475569;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.login-field input {
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  width: 100%;
+  padding: 11px;
+}
+
+.login-field input:disabled {
+  cursor: not-allowed;
+  opacity: .65;
+}
+
+.authmsg {
+  min-height: 25px;
+}
+
+/*# sourceMappingURL=app_auth_css_1igg3k2._.single.css.map*/
