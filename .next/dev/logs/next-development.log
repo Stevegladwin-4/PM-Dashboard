@@ -1,0 +1,30 @@
+<<<<<<< HEAD
+{"timestamp":"00:00:01.828","source":"Server","level":"LOG","message":""}
+{"timestamp":"00:00:11.368","source":"Server","level":"LOG","message":"○ Compiling / ..."}
+{"timestamp":"00:00:12.420","source":"Server","level":"LOG","message":"SUPABASE URL: \"https://klqhdcficpqfyugkbjvc.supabase.co\""}
+{"timestamp":"00:00:12.422","source":"Server","level":"LOG","message":"SUPABASE KEY PREFIX: \"sb_publishable_\""}
+{"timestamp":"00:00:13.061","source":"Browser","level":"INFO","message":"Download the React DevTools for a better development experience: https://react.dev/link/react-devtools"}
+{"timestamp":"00:00:13.438","source":"Browser","level":"LOG","message":"SUPABASE URL: https://klqhdcficpqfyugkbjvc.supabase.co"}
+{"timestamp":"00:00:13.438","source":"Browser","level":"LOG","message":"SUPABASE KEY PREFIX: sb_publishable_"}
+{"timestamp":"00:02:39.890","source":"Browser","level":"ERROR","message":"./app/api/admin/create-user/route.ts:25:7\nError: Expression expected\n  23 |     if (!currentUser) {\n  24 |       return NextResponse.json(\n> 25 |       const cookieStore = await cookies();\n     |       ^^^^^\n  26 |       const supabase = createServerClient(cookieStore);\n  27 |         { status: 401 }\n  28 |       );\n\nParsing ecmascript source code failed "}
+{"timestamp":"00:02:39.892","source":"Server","level":"ERROR","message":"[browser] \"./app/api/admin/create-user/route.ts:25:7\\nError: Expression expected\\n  23 |     if (!currentUser) {\\n  24 |       return NextResponse.json(\\n> 25 |       const cookieStore = await cookies();\\n     |       ^^^^^\\n  26 |       const supabase = createServerClient(cookieStore);\\n  27 |         { status: 401 }\\n  28 |       );\\n\\nParsing ecmascript source code failed\" \"\""}
+{"timestamp":"00:02:40.123","source":"Browser","level":"ERROR","message":"./app/api/admin/create-user/route.ts:25:7\nError: Expression expected\n  23 |     if (!currentUser) {\n  24 |       return NextResponse.json(\n> 25 |       const cookieStore = await cookies();\n     |       ^^^^^\n  26 |       const supabase = createServerClient(cookieStore);\n  27 |         { status: 401 }\n  28 |       );\n\nParsing ecmascript source code failed "}
+{"timestamp":"00:02:40.123","source":"Server","level":"ERROR","message":"[browser] \"./app/api/admin/create-user/route.ts:25:7\\nError: Expression expected\\n  23 |     if (!currentUser) {\\n  24 |       return NextResponse.json(\\n> 25 |       const cookieStore = await cookies();\\n     |       ^^^^^\\n  26 |       const supabase = createServerClient(cookieStore);\\n  27 |         { status: 401 }\\n  28 |       );\\n\\nParsing ecmascript source code failed\" \"\""}
+{"timestamp":"00:02:55.195","source":"Browser","level":"ERROR","message":"./app/api/admin/create-user/route.ts:25:7\nError: Expression expected\n  23 |     if (!currentUser) {\n  24 |       return NextResponse.json(\n> 25 |       const cookieStore = await cookies();\n     |       ^^^^^\n  26 |       const supabase = createServerClient(cookieStore);\n  27 |         { status: 401 }\n  28 |       );\n\nParsing ecmascript source code failed "}
+{"timestamp":"00:02:55.196","source":"Server","level":"ERROR","message":"[browser] \"./app/api/admin/create-user/route.ts:25:7\\nError: Expression expected\\n  23 |     if (!currentUser) {\\n  24 |       return NextResponse.json(\\n> 25 |       const cookieStore = await cookies();\\n     |       ^^^^^\\n  26 |       const supabase = createServerClient(cookieStore);\\n  27 |         { status: 401 }\\n  28 |       );\\n\\nParsing ecmascript source code failed\" \"\""}
+{"timestamp":"00:03:05.003","source":"Server","level":"LOG","message":"CREATE USER REQUEST: {}"}
+{"timestamp":"00:03:05.490","source":"Server","level":"ERROR","message":"AUTH CREATE ERROR: AuthApiError: Invalid API key"}
+{"timestamp":"00:03:08.439","source":"Server","level":"LOG","message":"CREATE USER REQUEST: {}"}
+{"timestamp":"00:03:08.597","source":"Server","level":"ERROR","message":"AUTH CREATE ERROR: AuthApiError: Invalid API key"}
+{"timestamp":"00:03:14.742","source":"Server","level":"LOG","message":"CREATE USER REQUEST: {}"}
+{"timestamp":"00:03:21.155","source":"Server","level":"LOG","message":"CREATE USER REQUEST: {}"}
+{"timestamp":"00:03:21.466","source":"Server","level":"ERROR","message":"AUTH CREATE ERROR: AuthApiError: Invalid API key"}
+{"timestamp":"00:05:41.180","source":"Server","level":"LOG","message":"  Reload env: .env.local"}
+{"timestamp":"00:06:02.182","source":"Server","level":"LOG","message":"CREATE USER REQUEST: {}"}
+{"timestamp":"00:07:21.898","source":"Server","level":"LOG","message":"✓ Compiled in 122ms"}
+=======
+{"timestamp":"00:00:05.292","source":"Server","level":"LOG","message":""}
+{"timestamp":"00:00:18.020","source":"Browser","level":"INFO","message":"Download the React DevTools for a better development experience: https://react.dev/link/react-devtools"}
+{"timestamp":"00:01:16.747","source":"Browser","level":"INFO","message":"Download the React DevTools for a better development experience: https://react.dev/link/react-devtools"}
+{"timestamp":"00:01:21.338","source":"Browser","level":"INFO","message":"Download the React DevTools for a better development experience: https://react.dev/link/react-devtools"}
+>>>>>>> ec5d388 (Allow section admins and technicians to update PM status)
