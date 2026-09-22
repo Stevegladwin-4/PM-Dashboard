@@ -232,7 +232,7 @@ export default function Dashboard() {
     isSuperAdmin || isSectionAdmin;
 
   const canUpdatePM =
-    isSuperAdmin || isTechnician;
+    isSuperAdmin || isSectionAdmin || isTechnician;
 
   function canAccessEquipment(item: Equipment) {
     if (isSuperAdmin || isSuperViewer) {
@@ -264,7 +264,7 @@ export default function Dashboard() {
     }
 
     return (
-      isTechnician &&
+      (isSectionAdmin || isTechnician) &&
       userSection !== null &&
       item.section === userSection
     );
@@ -908,44 +908,77 @@ export default function Dashboard() {
     [sectionScopedEquipment]
   );
 
-  async function updatePM(pm: PMSchedule, completed: boolean) {
-    if (!canUpdatePM) {
-      return;
+  async function updatePM(pm: PMSchedule, markDone: boolean) {
+    try {
+      const equipmentItem = equipment.find((item) =>
+        item.pm_schedules?.some((schedule) => schedule.id === pm.id)
+      );
+
+      if (!equipmentItem) {
+        alert("Equipment not found");
+        return;
+      }
+
+      if (!canUpdateThisPM(equipmentItem)) {
+        alert("You do not have permission to update this PM.");
+        return;
+      }
+
+      if (!pm.scheduled_date) {
+        return;
+      }
+
+      const response = await fetch(`/api/pm/${pm.id}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          completed_date: markDone
+            ? new Date().toISOString().split("T")[0]
+            : null,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || "Failed to update PM");
+      }
+
+      await load();
+    } catch (error) {
+      console.error("PM UPDATE ERROR:", error);
+
+      alert(
+        error instanceof Error ? error.message : "Failed to update PM"
+      );
     }
-
-    const response = await fetch(`/api/pm/${pm.id}`, {
-      method: "PATCH",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        completed,
-      }),
-    });
-
-    if (!response.ok) {
-      const data = await response.json();
-      alert(data.error ?? "Could not update PM.");
-      return;
-    }
-
-    await load();
   }
 
   async function markAll(e: Equipment) {
     if (!canUpdateThisPM(e)) {
+      alert("You do not have permission to update this equipment.");
       return;
     }
 
-    const pending = (e.pm_schedules ?? []).filter(
-      (pm) => pm.scheduled_date !== null && !pm.completed_date
+    const pendingPMs = (e.pm_schedules ?? []).filter(
+      (pm) => pm.scheduled_date !== null && pm.completed_date === null
     );
 
-    for (const pm of pending) {
-      await updatePM(pm, true);
+    if (pendingPMs.length === 0) {
+      return;
     }
 
-    await load();
+    try {
+      for (const pm of pendingPMs) {
+        await updatePM(pm, true);
+      }
+
+      await load();
+    } catch (error) {
+      console.error("MARK ALL ERROR:", error);
+    }
   }
 
   function openEquipmentForm(e?: Equipment) {
@@ -2211,9 +2244,16 @@ export default function Dashboard() {
                           {canUpdateThisPM(equipment) && (
                             <button
                               className="btn btn-primary"
-                              onClick={() => updatePM(pm, true)}
+                              onClick={() =>
+                                updatePM(
+                                  pm,
+                                  getPMStatus(pm) !== "Done"
+                                )
+                              }
                             >
-                              Mark Done
+                              {getPMStatus(pm) === "Done"
+                                ? "Undo"
+                                : "Mark Done"}
                             </button>
                           )}
                         </td>
@@ -3363,7 +3403,7 @@ function EquipmentRow({
                 markAll(e)
               }
             >
-              ✓ Mark all PMs
+              Mark All Done
             </button>
           )}
         </td>
@@ -3457,20 +3497,16 @@ function PMCell({
       {canUpdate && (s === "Done" ? (
         <button
           className="undo"
-          onClick={() =>
-            updatePM(pm, false)
-          }
+          onClick={() => updatePM(pm, false)}
         >
-          ↶ Undo
+          Undo
         </button>
       ) : (
         <button
           className="mark"
-          onClick={() =>
-            updatePM(pm, true)
-          }
+          onClick={() => updatePM(pm, true)}
         >
-          ✓ Mark Done
+          Mark Done
         </button>
       ))}
 
