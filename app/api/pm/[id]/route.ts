@@ -53,6 +53,8 @@ export async function PATCH(
       id,
       equipment_id,
       scheduled_date,
+      completed_date,
+      completed_by,
       equipment:equipment_id (
         id,
         section
@@ -87,21 +89,37 @@ export async function PATCH(
       );
     }
 
-    if (!pm.scheduled_date) {
+    const body = await request.json();
+    const hasScheduledDate = Object.prototype.hasOwnProperty.call(
+      body,
+      "scheduled_date"
+    );
+
+    if (!hasScheduledDate && !pm.scheduled_date) {
       return NextResponse.json(
         { error: "N/A PM schedules cannot be marked as done." },
         { status: 400 }
       );
     }
 
-    const body = await request.json();
-    const completedDate = body.completed_date ?? null;
+    const scheduledDate = hasScheduledDate
+      ? body.scheduled_date || null
+      : pm.scheduled_date;
+    const completedDate = hasScheduledDate
+      ? pm.completed_date
+      : body.completed_date ?? null;
+    const completedBy = hasScheduledDate
+      ? pm.completed_by
+      : completedDate !== null
+        ? user.id
+        : null;
 
     const { data, error } = await supabase
       .from("pm_schedules")
       .update({
+        scheduled_date: scheduledDate,
         completed_date: completedDate,
-        completed_by: completedDate !== null ? user.id : null,
+        completed_by: completedBy,
         updated_at: new Date().toISOString(),
       })
       .eq("id", id)

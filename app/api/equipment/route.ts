@@ -14,6 +14,7 @@ type EquipmentInput = {
   campus?: string;
   contract?: string;
   section?: string | null;
+  working_status?: string | null;
   pm_dates?: Record<string, string | null>;
 };
 
@@ -198,6 +199,7 @@ export async function POST(request: Request) {
       campus: clean(body.campus),
       contract: clean(body.contract),
       section: equipmentSection,
+      working_status: clean(body.working_status) || "ACTIVE",
     };
 
     /*
@@ -467,6 +469,7 @@ export async function PATCH(request: Request) {
       campus: clean(body.campus),
       contract: clean(body.contract),
       section: updatedSection,
+      working_status: clean(body.working_status) || "ACTIVE",
     };
 
     if (

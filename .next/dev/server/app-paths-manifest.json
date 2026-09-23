@@ -1,10 +1,6 @@
 {
-<<<<<<< HEAD
-  "/_not-found/page": "app/_not-found/page.js",
-  "/api/admin/create-user/route": "app/api/admin/create-user/route.js",
-=======
   "/api/auth/login-id/route": "app/api/auth/login-id/route.js",
   "/api/pm/[id]/route": "app/api/pm/[id]/route.js",
->>>>>>> ec5d388 (Allow section admins and technicians to update PM status)
+  "/api/equipment/route": "app/api/equipment/route.js",
   "/page": "app/page.js"
 }

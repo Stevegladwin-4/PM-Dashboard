@@ -38,7 +38,8 @@ export type Equipment = {
   campus: string | null;
   contract: string | null;
   section: Section | null;
-  pm_schedules: PMSchedule[];
+  working_status: string | null;
+  pm_schedules?: PMSchedule[];
 };
 
 export type UserRoleRecord = {

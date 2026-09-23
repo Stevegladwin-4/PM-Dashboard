@@ -4,7 +4,9 @@ import { useEffect, useMemo, useState } from "react";
 import type { FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import {
+  Activity,
   AlertTriangle,
+  BadgeCheck,
   BarChart3,
   Building2,
   CalendarDays,
@@ -34,6 +36,7 @@ import {
   X,
 } from "lucide-react";
 import * as XLSX from "xlsx";
+import EquipmentMasterDashboard from "./EquipmentMasterDashboard";
 import {
   Bar,
   BarChart,
@@ -67,6 +70,7 @@ const emptyStats: Record<PMStatus, number> = {
 };
 
 type EquipmentForm = {
+  section: Section;
   sno: string;
   department: string;
   inventory_no: string;
@@ -77,6 +81,7 @@ type EquipmentForm = {
   make: string;
   campus: string;
   contract: string;
+  working_status: string;
   pm1_date: string;
   pm2_date: string;
   pm3_date: string;
@@ -88,6 +93,7 @@ type EquipmentForm = {
 };
 
 const emptyEquipmentForm: EquipmentForm = {
+  section: "HIGH_END_RADIOLOGY",
   sno: "",
   department: "",
   inventory_no: "",
@@ -98,6 +104,7 @@ const emptyEquipmentForm: EquipmentForm = {
   make: "",
   campus: "",
   contract: "",
+  working_status: "ACTIVE",
   pm1_date: "",
   pm2_date: "",
   pm3_date: "",
@@ -110,6 +117,11 @@ const emptyEquipmentForm: EquipmentForm = {
 
 function fmtDate(value: string | Date | null) {
   if (!value) return "N/A";
+
+  if (typeof value === "string") {
+    const [year, month, day] = value.split("-");
+    if (year && month && day) return `${day}-${month}-${year}`;
+  }
 
   return new Intl.DateTimeFormat("en-GB", {
     day: "2-digit",
@@ -168,6 +180,8 @@ function excelValue(row: Record<string, unknown>, names: string[]) {
   return "";
 }
 
+type DashboardView = "MASTER" | "PM";
+
 export default function Dashboard() {
   const router = useRouter();
   const [equipment, setEquipment] = useState<Equipment[]>([]);
@@ -180,6 +194,24 @@ export default function Dashboard() {
   const [status, setStatus] = useState("Any status");
   const [pmNumber, setPmNumber] = useState("All");
   const [scheduleSearch, setScheduleSearch] = useState("");
+  const [dashboardView, setDashboardView] = useState<DashboardView>("MASTER");
+
+  const [masterSearch, setMasterSearch] = useState("");
+  const [masterEquipmentFilter, setMasterEquipmentFilter] = useState("All");
+  const [masterSectionFilter, setMasterSectionFilter] = useState("All");
+  const [masterDepartmentFilter, setMasterDepartmentFilter] = useState("All");
+  const [masterCampusFilter, setMasterCampusFilter] = useState("All");
+  const [masterContractFilter, setMasterContractFilter] = useState("All");
+  const [masterMakeFilter, setMasterMakeFilter] = useState("All");
+  const [masterModelFilter, setMasterModelFilter] = useState("All");
+  const [masterWorkingStatusFilter, setMasterWorkingStatusFilter] = useState("All");
+
+  const [masterDepartment, setMasterDepartment] = useState("All");
+  const [masterCampus, setMasterCampus] = useState("All");
+  const [masterContract, setMasterContract] = useState("All");
+  const [masterEquipment, setMasterEquipment] = useState("All");
+  const [masterMake, setMasterMake] = useState("All");
+  const [masterModel, setMasterModel] = useState("All");
 
   const [dataLoading, setDataLoading] = useState(true);
   const [connected, setConnected] = useState(true);
@@ -410,7 +442,7 @@ export default function Dashboard() {
     loadUserRole();
 
     const channel = supabase
-      .channel("pm-dashboard")
+      .channel("biomedical-dashboard-realtime")
       .on(
         "postgres_changes",
         {
@@ -418,7 +450,7 @@ export default function Dashboard() {
           schema: "public",
           table: "pm_schedules",
         },
-        load
+        () => load()
       )
       .on(
         "postgres_changes",
@@ -427,7 +459,7 @@ export default function Dashboard() {
           schema: "public",
           table: "equipment",
         },
-        load
+        () => load()
       )
       .subscribe();
 
@@ -908,6 +940,277 @@ export default function Dashboard() {
     [sectionScopedEquipment]
   );
 
+  const masterDepartments = useMemo(
+    () =>
+      [
+        ...new Set(
+          sectionScopedEquipment
+            .map((e) => e.department)
+            .filter(Boolean)
+        ),
+      ].sort(),
+    [sectionScopedEquipment]
+  );
+
+  const masterCampuses = useMemo(
+    () =>
+      [
+        ...new Set(
+          sectionScopedEquipment
+            .map((e) => e.campus)
+            .filter(
+              (value): value is string => Boolean(value)
+            )
+        ),
+      ].sort(),
+    [sectionScopedEquipment]
+  );
+
+  const masterContracts = useMemo(
+    () =>
+      [
+        ...new Set(
+          sectionScopedEquipment
+            .map((e) => e.contract)
+            .filter(
+              (value): value is string => Boolean(value)
+            )
+        ),
+      ].sort(),
+    [sectionScopedEquipment]
+  );
+
+  const masterEquipmentNames = useMemo(
+    () =>
+      [
+        ...new Set(
+          sectionScopedEquipment
+            .map((e) => e.equipment_name)
+            .filter(Boolean)
+        ),
+      ].sort(),
+    [sectionScopedEquipment]
+  );
+
+  const masterMakes = useMemo(
+    () =>
+      [
+        ...new Set(
+          sectionScopedEquipment
+            .map((e) => e.make)
+            .filter(
+              (value): value is string => Boolean(value)
+            )
+        ),
+      ].sort(),
+    [sectionScopedEquipment]
+  );
+
+  const masterModels = useMemo(
+    () =>
+      [
+        ...new Set(
+          sectionScopedEquipment
+            .map((e) => e.model)
+            .filter(
+              (value): value is string => Boolean(value)
+            )
+        ),
+      ].sort(),
+    [sectionScopedEquipment]
+  );
+
+  const masterFiltered = useMemo(() => {
+    const q = masterSearch.toLowerCase().trim();
+
+    return sectionScopedEquipment.filter((e) => {
+      const text = [
+        e.sno,
+        e.section,
+        getSectionLabel(e.section),
+        e.department,
+        e.inventory_no,
+        e.location,
+        e.equipment_name,
+        e.model,
+        e.serial_no,
+        e.make,
+        e.campus,
+        e.contract,
+        e.working_status,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+
+      if (q && !text.includes(q)) return false;
+      if (
+        masterDepartment !== "All" &&
+        e.department !== masterDepartment
+      ) {
+        return false;
+      }
+      if (masterCampus !== "All" && e.campus !== masterCampus) {
+        return false;
+      }
+      if (
+        masterContract !== "All" &&
+        e.contract !== masterContract
+      ) {
+        return false;
+      }
+      if (
+        masterEquipment !== "All" &&
+        e.equipment_name !== masterEquipment
+      ) {
+        return false;
+      }
+      if (masterMake !== "All" && e.make !== masterMake) {
+        return false;
+      }
+      if (masterModel !== "All" && e.model !== masterModel) {
+        return false;
+      }
+
+      return true;
+    });
+  }, [
+    sectionScopedEquipment,
+    masterSearch,
+    masterDepartment,
+    masterCampus,
+    masterContract,
+    masterEquipment,
+    masterMake,
+    masterModel,
+  ]);
+
+  const masterSectionData = useMemo(() => {
+    const counts = new Map<string, number>();
+
+    masterFiltered.forEach((equipment) => {
+      const section = equipment.section
+        ? getSectionLabel(equipment.section)
+        : "N/A";
+
+      counts.set(section, (counts.get(section) ?? 0) + 1);
+    });
+
+    return Array.from(counts.entries()).map(([name, value]) => ({
+      name,
+      value,
+    }));
+  }, [masterFiltered]);
+
+  const masterCampusData = useMemo(() => {
+    const counts = new Map<string, number>();
+
+    masterFiltered.forEach((equipment) => {
+      const campus = equipment.campus || "N/A";
+
+      counts.set(campus, (counts.get(campus) ?? 0) + 1);
+    });
+
+    return Array.from(counts.entries()).map(([name, value]) => ({
+      name,
+      value,
+    }));
+  }, [masterFiltered]);
+
+  const masterDepartmentData = useMemo(() => {
+    const counts = new Map<string, number>();
+
+    masterFiltered.forEach((equipment) => {
+      const department = equipment.department || "N/A";
+
+      counts.set(department, (counts.get(department) ?? 0) + 1);
+    });
+
+    return Array.from(counts.entries()).map(([name, value]) => ({
+      name,
+      value,
+    }));
+  }, [masterFiltered]);
+
+  const masterContractData = useMemo(() => {
+    const counts = new Map<string, number>();
+
+    masterFiltered.forEach((equipment) => {
+      const contract = equipment.contract || "N/A";
+
+      counts.set(contract, (counts.get(contract) ?? 0) + 1);
+    });
+
+    return Array.from(counts.entries()).map(([name, value]) => ({
+      name,
+      value,
+    }));
+  }, [masterFiltered]);
+
+  const masterPMs = useMemo(
+    () =>
+      masterFiltered.flatMap((e) =>
+        (e.pm_schedules ?? []).filter(
+          (pm) => pm.scheduled_date !== null
+        )
+      ),
+    [masterFiltered]
+  );
+
+  const masterDone = masterPMs.filter(
+    (pm) => getPMStatus(pm) === "Done"
+  ).length;
+  const masterPending = masterPMs.filter(
+    (pm) => getPMStatus(pm) === "Pending"
+  ).length;
+  const masterOverdue = masterPMs.filter(
+    (pm) => getPMStatus(pm) === "Overdue"
+  ).length;
+  const masterScheduled = masterPMs.filter(
+    (pm) => getPMStatus(pm) === "Scheduled"
+  ).length;
+  const masterCompliance = masterPMs.length
+    ? Math.round((masterDone / masterPMs.length) * 100)
+    : 0;
+
+  const masterTotal = masterFiltered.length;
+
+  const masterActive = masterFiltered.filter((e) => {
+    const status = String(e.working_status ?? "")
+      .trim()
+      .toUpperCase();
+    return status === "ACTIVE" || status === "WORKING";
+  }).length;
+
+  const masterAMC = masterFiltered.filter((e) =>
+    String(e.contract ?? "")
+      .trim()
+      .toUpperCase()
+      .includes("AMC")
+  ).length;
+
+  const masterWarranty = masterFiltered.filter((e) =>
+    String(e.contract ?? "")
+      .trim()
+      .toUpperCase()
+      .includes("WARRANTY")
+  ).length;
+
+  const masterActivePercentage =
+    masterTotal > 0
+      ? Math.round((masterActive / masterTotal) * 100)
+      : 0;
+
+  const masterAMCPercentage =
+    masterTotal > 0
+      ? Math.round((masterAMC / masterTotal) * 100)
+      : 0;
+
+  const masterWarrantyPercentage =
+    masterTotal > 0
+      ? Math.round((masterWarranty / masterTotal) * 100)
+      : 0;
+
   async function updatePM(pm: PMSchedule, markDone: boolean) {
     try {
       const equipmentItem = equipment.find((item) =>
@@ -993,6 +1296,7 @@ export default function Dashboard() {
           ?.scheduled_date === null;
 
       setEquipmentForm({
+        section: e.section ?? "HIGH_END_RADIOLOGY",
         sno: String(e.sno ?? ""),
         department: e.department ?? "",
         inventory_no: e.inventory_no ?? "",
@@ -1003,6 +1307,7 @@ export default function Dashboard() {
         make: e.make ?? "",
         campus: e.campus ?? "",
         contract: e.contract ?? "",
+        working_status: e.working_status ?? "ACTIVE",
         pm1_date: getPMDate(1),
         pm2_date: getPMDate(2),
         pm3_date: getPMDate(3),
@@ -1031,16 +1336,31 @@ export default function Dashboard() {
 
   async function saveEquipment() {
     if (
+      !equipmentForm.section ||
       !equipmentForm.sno ||
       !equipmentForm.department ||
       !equipmentForm.inventory_no ||
       !equipmentForm.equipment_name
     ) {
       alert(
-        "S.NO, Department, Inventory No and Equipment are required."
+        "Section, S.NO, Department, Inventory No and Equipment are required."
       );
       return;
     }
+
+    const equipmentPayload = {
+      ...equipmentForm,
+      section: isSuperAdmin
+        ? equipmentForm.section
+        : userSection ?? equipmentForm.section,
+      working_status: equipmentForm.working_status,
+      pm_dates: {
+        1: equipmentForm.pm1_na ? null : equipmentForm.pm1_date,
+        2: equipmentForm.pm2_na ? null : equipmentForm.pm2_date,
+        3: equipmentForm.pm3_na ? null : equipmentForm.pm3_date,
+        4: equipmentForm.pm4_na ? null : equipmentForm.pm4_date,
+      },
+    };
 
     const response = await fetch("/api/equipment", {
       method: editingEquipment ? "PATCH" : "POST",
@@ -1050,24 +1370,10 @@ export default function Dashboard() {
       body: JSON.stringify(
         editingEquipment
           ? {
-              ...equipmentForm,
+              ...equipmentPayload,
               id: editingEquipment.id,
-              pm_dates: {
-                1: equipmentForm.pm1_na ? null : equipmentForm.pm1_date,
-                2: equipmentForm.pm2_na ? null : equipmentForm.pm2_date,
-                3: equipmentForm.pm3_na ? null : equipmentForm.pm3_date,
-                4: equipmentForm.pm4_na ? null : equipmentForm.pm4_date,
-              },
             }
-          : {
-              ...equipmentForm,
-              pm_dates: {
-                1: equipmentForm.pm1_na ? null : equipmentForm.pm1_date,
-                2: equipmentForm.pm2_na ? null : equipmentForm.pm2_date,
-                3: equipmentForm.pm3_na ? null : equipmentForm.pm3_date,
-                4: equipmentForm.pm4_na ? null : equipmentForm.pm4_date,
-              },
-            }
+          : equipmentPayload
       ),
     });
 
@@ -1157,6 +1463,7 @@ export default function Dashboard() {
 
       rows.push({
         "S.NO": e.sno,
+        Section: e.section ?? "",
         Department: e.department,
         "Inventory No": e.inventory_no,
         Location: e.location ?? "",
@@ -1166,6 +1473,7 @@ export default function Dashboard() {
         Make: e.make ?? "",
         Campus: e.campus ?? "",
         Contract: e.contract ?? "",
+        "Working Status": e.working_status ?? "",
 
         "PM 1 Date": pm1?.scheduled_date ?? "",
         "PM 1 Status": pm1 ? getPMStatus(pm1) : "",
@@ -1225,6 +1533,35 @@ export default function Dashboard() {
       `preventive-maintenance-${new Date()
         .toISOString()
         .slice(0, 10)}.xlsx`
+    );
+  }
+
+  function exportMasterExcel() {
+    const rows = masterFiltered.map((e, index) => ({
+      "S.NO": index + 1,
+      Section: getSectionLabel(e.section),
+      Department: e.department ?? "",
+      "Inventory No": e.inventory_no ?? "",
+      Location: e.location ?? "",
+      Equipment: e.equipment_name ?? "",
+      Model: e.model ?? "",
+      "Serial No": e.serial_no ?? "",
+      Make: e.make ?? "",
+      Campus: e.campus ?? "",
+      Contract: e.contract ?? "",
+      "Working Status": e.working_status ?? "",
+        "PM1 Date": e.pm_schedules?.find((pm) => pm.pm_no === 1)?.scheduled_date ?? "",
+        "PM2 Date": e.pm_schedules?.find((pm) => pm.pm_no === 2)?.scheduled_date ?? "",
+        "PM3 Date": e.pm_schedules?.find((pm) => pm.pm_no === 3)?.scheduled_date ?? "",
+        "PM4 Date": e.pm_schedules?.find((pm) => pm.pm_no === 4)?.scheduled_date ?? "",
+    }));
+
+    const worksheet = XLSX.utils.json_to_sheet(rows);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Master Equipment");
+    XLSX.writeFile(
+      workbook,
+      `equipment-master-${new Date().toISOString().slice(0, 10)}.xlsx`
     );
   }
 
@@ -1289,6 +1626,22 @@ export default function Dashboard() {
             "Inventory Number",
           ])
         ).trim();
+
+        const section = String(
+          excelValue(row, ["Section", "SECTION"])
+        ).trim();
+
+        if (
+          ![
+            "HIGH_END_RADIOLOGY",
+            "LIFE_SUPPORT",
+            "GENERAL_MONITORING",
+          ].includes(section)
+        ) {
+          throw new Error(
+            `Invalid or missing Section for inventory ${inventoryNo}`
+          );
+        }
 
         const equipmentName = String(
           excelValue(row, [
@@ -1357,6 +1710,7 @@ export default function Dashboard() {
         );
 
         const payload = {
+          section,
           sno,
           department,
           inventory_no: inventoryNo,
@@ -1383,6 +1737,9 @@ export default function Dashboard() {
           contract: String(
             excelValue(row, ["Contract"])
           ).trim(),
+          working_status: String(
+            excelValue(row, ["Working Status", "Status"])
+          ).trim() || "ACTIVE",
           pm_dates: {
             1: pm1,
             2: pm2,
@@ -1441,6 +1798,13 @@ export default function Dashboard() {
     setContract("All");
     setStatus("Any status");
     setPmNumber("All");
+    setMasterSearch("");
+    setMasterDepartment("All");
+    setMasterCampus("All");
+    setMasterContract("All");
+    setMasterEquipment("All");
+    setMasterMake("All");
+    setMasterModel("All");
   }
 
   /*
@@ -1700,11 +2064,21 @@ export default function Dashboard() {
 
           <button
             className="btn"
-            onClick={exportExcel}
-            title="Export Excel"
+            onClick={
+              dashboardView === "MASTER"
+                ? exportMasterExcel
+                : exportExcel
+            }
+            title={
+              dashboardView === "MASTER"
+                ? "Export Master"
+                : "Export PM schedule"
+            }
           >
             <FileSpreadsheet size={15} />
-            Excel Export
+            {dashboardView === "MASTER"
+              ? "Export Master"
+              : "Excel Export"}
           </button>
 
           <button
@@ -1762,6 +2136,27 @@ export default function Dashboard() {
       </header>
 
       <div className="dashboard-content">
+      <div className="dashboard-switcher">
+        <button
+          type="button"
+          className={dashboardView === "MASTER" ? "dashboard-tab active" : "dashboard-tab"}
+          onClick={() => setDashboardView("MASTER")}
+        >
+          <MonitorCog size={17} />
+          Equipment Master
+        </button>
+        <button
+          type="button"
+          className={dashboardView === "PM" ? "dashboard-tab active" : "dashboard-tab"}
+          onClick={() => setDashboardView("PM")}
+        >
+          <CalendarDays size={17} />
+          PM Dashboard
+        </button>
+      </div>
+
+      {dashboardView === "PM" && (
+      <>
       <section className="filter-bar dashboard-filter-bar">
         <div className="filter-field equipment-search">
           <label>Equipment</label>
@@ -2441,6 +2836,184 @@ export default function Dashboard() {
 
       </div>
 
+      </>
+      )}
+
+      {dashboardView === "MASTER" && (
+        <EquipmentMasterDashboard
+          equipment={sectionScopedEquipment}
+          sectionFilter={sectionFilter}
+          userRole={userRole}
+          userSection={userSection}
+          canManageEquipment={canManageEquipment}
+          importing={importing}
+          importExcel={importExcel}
+          openEquipmentForm={openEquipmentForm}
+          deleteEquipment={deleteEquipment}
+        />
+      )}
+
+      {/* Legacy inline master panel is replaced by EquipmentMasterDashboard. */}
+      {false && <section className="panel master-dashboard">
+        <div className="section-header">
+          <div>
+            <span className="section-eyebrow">
+              EQUIPMENT MASTER DASHBOARD
+            </span>
+            <h2>Equipment Master Dashboard</h2>
+            <p>
+              Complete equipment inventory and preventive maintenance overview
+            </p>
+          </div>
+        </div>
+
+        <div className="master-filters">
+          <div className="filter-field">
+            <label>Search</label>
+            <div className="filter-search-box">
+              <Search size={16} />
+              <input
+                value={masterSearch}
+                onChange={(e) => setMasterSearch(e.target.value)}
+                placeholder="Equipment, inventory, serial, location..."
+              />
+            </div>
+          </div>
+
+          <Select
+            value={masterDepartment}
+            setValue={setMasterDepartment}
+            options={masterDepartments}
+            label="Department"
+          />
+          <Select
+            value={masterCampus}
+            setValue={setMasterCampus}
+            options={masterCampuses}
+            label="Campus"
+          />
+          <Select
+            value={masterContract}
+            setValue={setMasterContract}
+            options={masterContracts}
+            label="Contract"
+          />
+          <Select
+            value={masterEquipment}
+            setValue={setMasterEquipment}
+            options={masterEquipmentNames}
+            label="Equipment"
+          />
+          <Select
+            value={masterMake}
+            setValue={setMasterMake}
+            options={masterMakes}
+            label="Make"
+          />
+          <Select
+            value={masterModel}
+            setValue={setMasterModel}
+            options={masterModels}
+            label="Model"
+          />
+        </div>
+
+        <div className="master-kpi-grid">
+          <Stat
+            label="TOTAL EQUIPMENT"
+            value={masterTotal}
+            hint="Master equipment assets"
+            icon={<MonitorCog />}
+          />
+          <Stat
+            label="ACTIVE EQUIPMENT"
+            value={masterActive}
+            hint={`${masterActivePercentage}% currently active`}
+            icon={<Activity />}
+            success
+            progress={masterActivePercentage}
+          />
+          <Stat
+            label="UNDER AMC"
+            value={masterAMC}
+            hint={`${masterAMCPercentage}% of equipment`}
+            icon={<ShieldCheck />}
+            warning
+            progress={masterAMCPercentage}
+          />
+          <Stat
+            label="UNDER WARRANTY"
+            value={masterWarranty}
+            hint={`${masterWarrantyPercentage}% of equipment`}
+            icon={<BadgeCheck />}
+            success
+            progress={masterWarrantyPercentage}
+          />
+        </div>
+
+        <div className="master-table-wrap">
+          <table className="master-table">
+            <thead>
+              <tr>
+                <th>S.NO</th>
+                {sectionFilter === "All" && <th>SECTION</th>}
+                <th>DEPARTMENT</th>
+                <th>INVENTORY NO</th>
+                <th>LOCATION</th>
+                <th>EQUIPMENT</th>
+                <th>MODEL</th>
+                <th>SERIAL NO</th>
+                <th>MAKE</th>
+                <th>CAMPUS</th>
+                <th>CONTRACT</th>
+                <th>WORKING STATUS</th>
+              </tr>
+            </thead>
+            <tbody>
+              {masterFiltered.map((e, index) => {
+                return (
+                  <tr key={e.id}>
+                    <td>{index + 1}</td>
+                    {sectionFilter === "All" && (
+                      <td>{getSectionLabel(e.section)}</td>
+                    )}
+                    <td>{e.department}</td>
+                    <td>{e.inventory_no}</td>
+                    <td>{e.location}</td>
+                    <td><strong>{e.equipment_name}</strong></td>
+                    <td>{e.model}</td>
+                    <td>{e.serial_no}</td>
+                    <td>{e.make}</td>
+                    <td>{e.campus}</td>
+                    <td>{e.contract}</td>
+                    <td>
+                      <span className={
+                        String(e.working_status ?? "").toUpperCase() === "ACTIVE"
+                          ? "status done"
+                          : "status"
+                      }>
+                        {e.working_status || "N/A"}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
+              {masterFiltered.length === 0 && (
+                <tr>
+                  <td
+                    colSpan={sectionFilter === "All" ? 12 : 11}
+                    className="empty"
+                  >
+                    No equipment found.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>}
+
+      {dashboardView === "PM" && (
       <section className="schedule-section panel equipment-table equipment-schedule-card">
         <div className="section-header schedule-header equipment-schedule-header">
           <div className="section-banner">
@@ -2607,6 +3180,7 @@ export default function Dashboard() {
           </table>
         </div>
       </section>
+      )}
 
       </div>
 
@@ -2629,6 +3203,36 @@ export default function Dashboard() {
             </h2>
 
             <div className="equipment-fields">
+              {isSuperAdmin ? (
+                <select
+                  value={equipmentForm.section}
+                  onChange={(e) =>
+                    updateEquipmentField(
+                      "section",
+                      e.target.value as Section
+                    )
+                  }
+                >
+                  <option value="HIGH_END_RADIOLOGY">
+                    High-End & Radiology
+                  </option>
+                  <option value="LIFE_SUPPORT">
+                    Life Support and Surgical
+                  </option>
+                  <option value="GENERAL_MONITORING">
+                    General Monitoring
+                  </option>
+                </select>
+              ) : (
+                <input
+                  value={getSectionLabel(
+                    userSection ?? equipmentForm.section
+                  )}
+                  readOnly
+                  disabled
+                />
+              )}
+
               <input
                 value={equipmentForm.sno}
                 onChange={(e) =>
@@ -2739,6 +3343,21 @@ export default function Dashboard() {
                 }
                 placeholder="Contract"
               />
+
+              <select
+                value={equipmentForm.working_status}
+                onChange={(e) =>
+                  updateEquipmentField(
+                    "working_status",
+                    e.target.value
+                  )
+                }
+              >
+                <option value="ACTIVE">Active</option>
+                <option value="WORKING">Working</option>
+                <option value="UNDER_REPAIR">Under Repair</option>
+                <option value="DECOMMISSIONED">Decommissioned</option>
+              </select>
 
               <label>
                 PM 1 Date
@@ -3485,7 +4104,7 @@ function PMCell({
   return (
     <div className="pmcell">
       <div className="pmdate">
-        {pm.scheduled_date || "N/A"}
+        {fmtDate(pm.scheduled_date)}
       </div>
 
       <span

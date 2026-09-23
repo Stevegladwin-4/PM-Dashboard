@@ -12,15 +12,23 @@ create table if not exists public.equipment (
   make text,
   campus text,
   contract text,
+  section text,
+  working_status text not null default 'ACTIVE',
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table public.equipment
+  add column if not exists section text;
+
+alter table public.equipment
+  add column if not exists working_status text not null default 'ACTIVE';
 
 create table if not exists public.pm_schedules (
   id uuid primary key default uuid_generate_v4(),
   equipment_id uuid not null references public.equipment(id) on delete cascade,
   pm_no integer not null check (pm_no between 1 and 4),
-  scheduled_date date not null,
+  scheduled_date date,
   completed_date date,
   completed_by uuid references auth.users(id),
   created_at timestamptz not null default now(),
